@@ -741,27 +741,6 @@ window.addEventListener('load', ()=>{
  </div>
 </div>
 
-<!-- HERRAMIENTA: LLAMADOS -->
-<div class="herramienta" id="h-llamados">
-
-<div class="page-header" style="position:relative;">
- <img id="logo-header" alt="SENA" style="width:52px;height:52px;object-fit:contain;">
- <div>
- <h1 id="header-h1">Seguimiento a la Formación</h1>
- <p id="header-p">Centro Nacional Colombo Alemán — Área Metalmecánica</p>
- </div>
- <div style="position:absolute;top:10px;right:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
- <span id="nombre-sesion" style="font-size:11px;color:rgba(255,255,255,0.85);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
- <button id="btn-admin" onclick="abrirAdmin()" style="display:none;font-size:11px;padding:3px 10px;background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:10px;cursor:pointer;"> Admin</button>
- <button onclick="abrirCambioPassword()" style="font-size:11px;padding:3px 10px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:10px;cursor:pointer;"></button>
- <div class="vista-selector">
-  <button type="button" class="vista-btn vista-btn-sm" onclick="toggleMenuVista(this)">Vista<span class="vista-dos">: </span><span class="vista-actual">Automática</span> ▾</button>
-  <div class="vista-menu"></div>
- </div>
- <button onclick="cerrarSesion()" style="font-size:11px;padding:3px 10px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:10px;cursor:pointer;">Salir</button>
- </div>
-</div>
-
 <!-- Modal cambio de contraseña -->
 <div id="modal-cambio-pwd" style="display:none;position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;">
  <div style="background:#fff;border-radius:16px;padding:28px 24px;width:90%;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.25);">
@@ -788,9 +767,22 @@ window.addEventListener('load', ()=>{
  </div>
 </div>
 
+<!-- HERRAMIENTA: LLAMADOS -->
+<div class="herramienta" id="h-llamados">
+
 <div id="btn-volver-wrap" style="display:none;background:var(--bg);padding:12px 24px 0;max-width:700px;margin:0 auto;">
 <button class="btn-volver" onclick="volverInicio()">← Volver al inicio</button>
 </div>
+
+<div style="max-width:700px;margin:0 auto;padding:0 16px;">
+ <div class="home-title" style="margin-bottom:8px;">
+ <h2 id="header-h1">Llamados de Atención</h2>
+ <p id="header-p">Régimen de Medidas Formativas — Acuerdo 0009 de 2024</p>
+ </div>
+ <div class="home-divider" style="margin-bottom:8px;"></div>
+</div>
+<!-- Elementos heredados (ocultos): los usa la lógica de sesión -->
+<div style="display:none;"><img id="logo-header" alt="SENA"><span id="nombre-sesion"></span><button id="btn-admin" onclick="abrirAdmin()" style="display:none;"></button></div>
 
 <div class="container">
  <div class="steps">
