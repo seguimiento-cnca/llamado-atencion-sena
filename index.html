@@ -1736,9 +1736,19 @@ const FALTAS_DISC = {
  parrafo1:'el cual establece el deber de respetar los bienes y recursos culturales, naturales, físicos, digitales, de uso público o privado (en la entidad o fuera de ella) y velar por su conservación, apoyando o colaborando en las acciones que adelante el Centro de Formación para su protección, conservación y buen uso.',
  esDias:false },
  epp: {
- icon:'', label:'Incumplimiento de normas de seguridad (EPP)', sub:'Cap. 3, Art. 8, #15',
- articulo:'Capítulo 3, Artículo 8, numeral 15 del Reglamento del Aprendiz SENA',
- parrafo1:'el cual establece el deber de usar apropiadamente y promover el uso de los elementos de protección personal que correspondan a la ejecución de su formación, aplicando las buenas prácticas de seguridad y salud en el trabajo definidas por la entidad y por la normatividad, para cuidar de su vida, salud e integridad, prevenir riesgos y promover ambientes seguros y saludables.',
+ icon:'', label:'Incumplimiento de normas de seguridad (EPP)', sub:'Cap. 3, Art. 8, #15, 16 y 20',
+ articulo:'Capítulo 3, Artículo 8, numerales 15, 16 y 20 del Reglamento del Aprendiz SENA',
+ parrafo1:'que establecen, en su orden, el deber de usar apropiadamente y promover el uso de los elementos de protección personal que correspondan a la especialidad de su formación, cumplir con los protocolos de bioseguridad establecidos por la entidad y portar el conjunto de prendas y elementos de trabajo y protección asociados al proceso formativo.',
+ segs:[
+  {t:'el incumplimiento de normas de seguridad, bioseguridad y uso de elementos de protección personal y de trabajo, asociada al '},
+  {t:'Acuerdo 0009 de 2024, Capítulo III, Artículo 8°, numeral 15',b:true},
+  {t:', el cual establece el deber de usar apropiadamente y promover el uso de los elementos de protección personal que correspondan a la especialidad de su formación, aplicando las buenas prácticas de seguridad y salud en el trabajo definidas por la entidad y por la normatividad, para cuidar de su vida, salud e integridad, prevenir riesgos y promover ambientes seguros y saludables; '},
+  {t:'numeral 16',b:true},
+  {t:', que exige cumplir con los protocolos de bioseguridad establecidos por la entidad para el ingreso a las instalaciones del SENA o ambientes de formación, con el fin de cuidar de su vida, salud e integridad, prevenir riesgos y promover ambientes seguros y saludables; y '},
+  {t:'numeral 20',b:true},
+  {t:', que dispone el deber de portar el conjunto de prendas y elementos de trabajo y protección asociados al proceso formativo.'}
+ ],
+ cierre:'Situación que afecta las buenas prácticas de seguridad y salud en el trabajo definidas por la entidad y por la normatividad, para cuidar de su vida, salud e integridad.',
  esDias:false },
  plataformas: {
  icon:'', label:'Uso inadecuado de plataformas virtuales institucionales', sub:'Cap. 3, Art. 8, #21',
@@ -1882,17 +1892,43 @@ function restablecerRecsDisc(){ if(!confirm('¿Volver a las recomendaciones orig
 function recsDiscFinales(){ const l = recsDisc.map(r => String(r||'').replace(/\s+/g,' ').trim()).filter(Boolean); return l.length ? l : recsDiscPorDefecto(faltaSeleccionada); }
 
 // ===== Textos independientes por falta de días (impuntualidad / inasistencia) =====
+function continuidadBloques(bl){
+ const act = (bl||[]).filter(b => b.mes && b.diasSel.size > 0);
+ const total = act.reduce((n,b) => n + b.diasSel.size, 0);
+ if(total <= 1) return '';
+ if(act.length === 1){ const d = [...act[0].diasSel].sort((a,b)=>a-b); return d.every((x,i) => i===0 || x === d[i-1]+1) ? 'continua' : 'intermitente'; }
+ return 'intermitente';
+}
+function continuidadDias(k){ return continuidadBloques(bloquesMeses); }
+function conPunto(p){ p = String(p).trim(); return /[.!?…]$/.test(p) ? p : p + '.'; }
+function htmlSegs(segs){ return segs.map(x => x.b ? `<strong>${x.t}</strong>` : x.t).join(''); }
+// Primer párrafo de la sección 1: en negrilla solo la cita normativa; la descripción textual va en texto normal
+function segsFalta1(falta, persistencia, tipoFaltaTexto){
+ const cab = persistencia
+  ? [{t:'Durante el seguimiento a su proceso formativo, se identificó la persistencia de una '},{t:'falta académica',b:true},{t:' relacionada con el caso '}]
+  : [{t:'Durante el seguimiento a su proceso formativo, se identificó una '},{t:tipoFaltaTexto,b:true},{t:' relacionada con '}];
+ if(falta.segs) return cab.concat(falta.segs);
+ return cab.concat([{t:'"'+(falta.label||'')+'"',b:true},{t:', asociada al '},{t:falta.articulo||'',b:true},{t:', '},{t:falta.parrafo1||''}]);
+}
+const CIERRE_GENERAL = 'Situación que afecta el desarrollo normal de las actividades de aprendizaje, el cumplimiento de los compromisos adquiridos y el alcance de los resultados de aprendizaje previstos dentro de su programa de formación.';
+function cierreFalta(){
+ const pool = tipoLlamado==='academico' ? FALTAS_ACAD : FALTAS_DISC;
+ const l = (typeof llFaltas==='function') ? llFaltas() : [faltaSeleccionada];
+ const f = l.length===1 ? pool[l[0]] : null;
+ return (f && f.cierre) || CIERRE_GENERAL;
+}
 function esFaltaDias(k){ return k==='inasistencia' || k==='impuntualidad'; }
 function diasFaltasActuales(){ return (esFaltaDias(faltaSeleccionada) ? [faltaSeleccionada] : []); }
 const CIERRE_DIAS = ' el desarrollo normal de las actividades de aprendizaje, el cumplimiento de los compromisos adquiridos y el alcance de los resultados de aprendizaje previstos dentro de su programa de formación.';
 // Devuelve los segmentos {t,b} del párrafo de una falta de días. idx/total: posición entre las faltas de días del llamado.
 function segmentosDiasFalta(k, instr, dias, idx, total){
+ dias = String(dias).replace(/^los días (\d+) de /,'el día $1 de ');
  const ini = idx===0 ? 'De acuerdo con' : 'Así mismo, de acuerdo con';
  const seg = [];
  if(k==='impuntualidad'){
-  seg.push({t:ini+' los registros de asistencia y los reportes realizados por '},{t:instr,b:true},{t:', se evidencia que el aprendiz ha llegado de manera impuntual a las actividades de formación '},{t:dias,b:true},{t:' del presente año.'});
+  seg.push({t:ini+' los registros de asistencia y los reportes realizados por '},{t:instr,b:true},{t:', se evidencia que su asistencia ha sido impuntual '},{t:dias,b:true},{t:' del presente año.'});
  } else {
-  seg.push({t:ini+' los registros de inasistencia y los reportes realizados por '},{t:instr,b:true},{t:', se evidencia que el aprendiz presenta inasistencia continua o intermitente '},{t:dias,b:true},{t:' del presente año, sin que se haya justificado debidamente su incumplimiento en las actividades de la formación.'});
+  seg.push({t:ini+' los registros de inasistencia y los reportes realizados por '},{t:instr,b:true},{t:', se evidencia que su inasistencia'+(continuidadDias(k)?' '+continuidadDias(k):'')+' '},{t:dias,b:true},{t:' del presente año y no ha sido justificado su incumplimiento en las actividades de la formación.'});
  }
  if(idx===total-1) seg.push({t:(total>1?' Situaciones que afectan':' Situación que afecta')+CIERRE_DIAS});
  return seg;
@@ -2127,7 +2163,8 @@ function buildResumen(){
  <div class="preview-row"><span>Tipo de llamado:</span><span>${tipoLabel} — ${numLabel}</span></div>
  <div class="preview-row"><span>Tipo de falta:</span><span>${falta.label||''}</span></div>
  <div class="preview-row"><span>Instructor(es):</span><span>${v('instructores')}</span></div>
- ${falta.esDias?`<div class="preview-row"><span>Mes:</span><span>${v('mes')}</span></div><div class="preview-row"><span>Días:</span><span>${dias.join(', ')||'[sin días]'}</span></div>`:`<div class="preview-row"><span>Fecha del hecho:</span><span>${ffh}</span></div>`}
+ ${falta.articulo?`<div class="preview-row"><span>Fundamento:</span><span>${falta.articulo}</span></div>`:''}
+ ${falta.esDias?`<div class="preview-row"><span>Días:</span><span>${getDiasParaPDF()||'[sin días seleccionados]'}</span></div>`:`<div class="preview-row"><span>Fecha del hecho:</span><span>${ffh}</span></div>`}
  ${argVal?`<div class="preview-row"><span>Argumentación:</span><span>${argVal.substring(0,80)}${argVal.length>80?'...':''}</span></div>`:''}
  `;
 }
@@ -2333,27 +2370,7 @@ function generarPDF(){
  const tipoFaltaTexto = tipoLlamado==='academico' ? 'falta académica' : 'falta disciplinaria';
  const esSegundo = numeroLlamado==='segundo';
 
- y=writeJustifiedMixed(
- esSegundo && tipoLlamado==='academico' ? [
- {t:'Durante el seguimiento a su proceso formativo, se identificó la persistencia de una '},
- {t:'falta académica',b:true},
- {t:' relacionada con el caso '},
- {t:'"'+falta.label+'"',b:true},
- {t:', asociada al '},
- {t:falta.articulo||'',b:true},
- {t:', '},
- {t:falta.parrafo1,b:true}
- ] : [
- {t:'Durante el seguimiento a su proceso formativo, se identificó una '},
- {t:tipoFaltaTexto,b:true},
- {t:' relacionada con '},
- {t:'"'+falta.label+'"',b:true},
- {t:', asociada al '},
- {t:falta.articulo||'',b:true},
- {t:', '},
- {t:falta.parrafo1,b:true}
- ]
- ,y);y+=4;
+ y=writeJustifiedMixed(segsFalta1(falta, esSegundo && tipoLlamado==='academico', tipoFaltaTexto),y);y+=4;
 
  // SECCIÓN 2 — Descripción de la situación
  y=writeJustified('2. Descripción de la situación', y, true); y+=4;
@@ -2371,7 +2388,7 @@ function generarPDF(){
  ],y);y+=4;
  } else {
  const textoLibre = descAcad.texto || '[descripción de la situación]';
- const parrafos = textoLibre.split(/\n\n+|\n/).filter(p=>p.trim().length>0);
+ const parrafos = textoLibre.split(/\n\n+|\n/).filter(p=>p.trim().length>0).map(conPunto);
  const primero = parrafos[0] || '[descripción]';
  // Primer párrafo unido al inicio fijo
  y=writeJustifiedMixed([
@@ -2393,13 +2410,13 @@ function generarPDF(){
  });
  } else if(faltaSeleccionada!=='actividades'){
  // Primer párrafo con encabezado del instructor
- const parrafos = desc.split(/\n\n+|\n/).filter(p=>p.trim().length>0);
+ const parrafos = desc.split(/\n\n+|\n/).filter(p=>p.trim().length>0).map(conPunto);
  const primerParrafo = parrafos[0] || '[descripción de la situación]';
  y=writeJustifiedMixed([
  {t:'De acuerdo con los registros y reportes realizados por '},
  {t:instrVal,b:true},
  {t:', se identificó la siguiente situación: '},
- {t:primerParrafo}
+ {t:primerParrafo+(parrafos.length<=1?' '+cierreFalta():'')}
  ],y);y+=4;
  // Párrafos adicionales libres
  for(let pi=1;pi<parrafos.length;pi++){
@@ -2407,8 +2424,8 @@ function generarPDF(){
  y=writeJustified(parrafos[pi].trim(),y);y+=4;
  }
  // Párrafo de cierre estándar
- y=checkPage(y,8);
- y=writeJustified('Situación que afecta el desarrollo normal de las actividades de aprendizaje, el cumplimiento de los compromisos adquiridos y el alcance de los resultados de aprendizaje previstos dentro de su programa de formación.',y,false);y+=4;
+ if(parrafos.length>1){ y=checkPage(y,8);
+ y=writeJustified(cierreFalta(),y,false);y+=4; }
  }
 
  // SECCIÓN 3 — Medidas formativas
@@ -2444,9 +2461,9 @@ function generarPDF(){
  {t:'Capítulo VIII, Artículo 46, numeral 2, del Acuerdo 0009 de 2024 del Reglamento del Aprendiz SENA,', b:true},
  {t:' el cual '},
  {t:'contempla esta medida formativa de carácter preventivo', b:true},
- {t:', orientada a promover el cumplimiento de los deberes del aprendiz, fortalecer su permanencia en el proceso formativo y prevenir situaciones que puedan afectar su formación integral. En este sentido, se espera que asuma los compromisos necesarios para mejorar su comportamiento y garantizar el cumplimiento de los deberes establecidos en el Reglamento del Aprendiz SENA. ', b:true},
+ {t:', orientada a promover el cumplimiento de los deberes del aprendiz, fortalecer su permanencia en el proceso formativo y prevenir situaciones que puedan afectar su formación integral. En este sentido, se espera que asuma los compromisos necesarios para mejorar su comportamiento y garantizar el cumplimiento de los deberes establecidos en el Reglamento del Aprendiz SENA. '},
  {t:'De persistir los incumplimientos aquí descritos o de presentarse nuevamente conductas similares, se procederá a aplicar la siguiente medida formativa, correspondiente al Segundo Llamado de Atención '+(tipoLlamado==='disciplinario'?'Disciplinario':'Académico'), b:true},
- {t:', conforme a lo dispuesto en el Artículo 46 del Acuerdo 0009 de 2024.', b:true}
+ {t:', conforme a lo dispuesto en el Artículo 46 del Acuerdo 0009 de 2024.'}
  ];
  const lineasS3 = armarLineasMixed(segS3).length;
  const TITULO_H = 9.5, LINEA = 5.5, MIN_LINEAS = 3;
@@ -2713,7 +2730,7 @@ function buildPreviewHTML(){
  parrafo2 = `De acuerdo con el seguimiento realizado por <strong>${instrVal}</strong>, se evidencia que, ${tailBaseAcad()}`;
  } else {
  const tl = descAcad2.texto || '[descripción]';
- const pts = tl.split(/\n\n+|\n/).filter(p=>p.trim().length>0);
+ const pts = tl.split(/\n\n+|\n/).filter(p=>p.trim().length>0).map(conPunto);
  const p0 = pts[0]||'[descripción]';
  const extras2 = pts.slice(1).map(p=>`<p style="text-align:justify;margin-bottom:8px;">${p.trim()}</p>`).join('');
  parrafo2 = `De acuerdo con el seguimiento realizado por <strong>${instrVal}</strong>, se evidencia que, ${p0}${extras2 ? '</p>'+extras2+'<p style="display:none">' : ''}`;
@@ -2723,10 +2740,10 @@ function buildPreviewHTML(){
  { const dfs = diasFaltasActuales(); parrafo2 = dfs.map((k,i)=>htmlDiasFalta(k,instrVal,getDiasParaPDF(k)||'[días no seleccionados]',i,dfs.length)).join('</p><p style="text-align:justify;margin-bottom:8px;">'); }
  } else if(faltaSeleccionada!=='actividades'){
  const desc = v('descripcionFalta') || '[descripción de la situación]';
- const parrafos = desc.split(/\n\n+|\n/).filter(p=>p.trim().length>0);
+ const parrafos = desc.split(/\n\n+|\n/).filter(p=>p.trim().length>0).map(conPunto);
  const primer = parrafos[0] || '[descripción de la situación]';
  const extras = parrafos.slice(1).map(p=>`<p style="text-align:justify;margin-bottom:8px;">${p.trim()}</p>`).join('');
- parrafo2 = `De acuerdo con los registros y reportes realizados por <strong>${instrVal}</strong>, se identificó la siguiente situación: ${primer}${extras ? '</p>'+extras+'<p style="text-align:justify;">' : ' '}Situación que afecta el desarrollo normal de las actividades de aprendizaje, el cumplimiento de los compromisos adquiridos y el alcance de los resultados de aprendizaje previstos dentro de su programa de formación.`;
+ parrafo2 = `De acuerdo con los registros y reportes realizados por <strong>${instrVal}</strong>, se identificó la siguiente situación: ${primer}${extras ? '</p>'+extras+'<p style="text-align:justify;">' : ' '}${cierreFalta()}`;
  }
 
  const recsDiscPrev = recsDiscFinales();
@@ -2734,17 +2751,21 @@ function buildPreviewHTML(){
  const recs = tipoLlamado==='disciplinario' ? recsDiscPrev : recsAcad;
  const tipoMejora = tipoLlamado==='disciplinario' ? 'disciplinario' : 'académico';
 
- const seccion3 = esSegundo ? `
- <p style="text-align:justify;margin-bottom:10px;">La presente comunicación corresponde a un <strong>${tituloLlamado}</strong>, de conformidad con lo establecido en el <strong>Capítulo VIII, Artículo 46, numeral 2, del Acuerdo 0009 de 2024 del Reglamento del Aprendiz SENA</strong>, <strong>medida formativa de carácter preventivo y correctivo orientada a promover el cumplimiento de los deberes del aprendiz y la superación de las situaciones evidenciadas. En consecuencia, deberá dar cumplimiento a las siguientes recomendaciones de mejoramiento ${tipoMejora}, orientadas a corregir las situaciones evidenciadas y fortalecer el cumplimiento de los deberes establecidos en el Reglamento del Aprendiz SENA:</strong></p>
- <p style="margin-bottom:6px;"><strong>Recomendaciones de mejoramiento ${tipoMejora}</strong></p>
- <ul style="margin:0 0 16px 18px;padding:0;">${recs.map(r=>`<li style="text-align:justify;margin-bottom:6px;"><strong>${r}</strong></li>`).join('')}</ul>
+ const seccion3 = esSegundo ? (() => { const disc = tipoLlamado==='disciplinario'; return `
+ <p style="text-align:justify;margin-bottom:10px;">La presente comunicación corresponde a un <strong>${tituloLlamado}</strong>, de conformidad con lo establecido en el <strong>Capítulo VIII, Artículo 46, numeral ${disc?2:1}, del Acuerdo 0009 de 2024 del Reglamento del Aprendiz SENA</strong>, ${disc
+ ? '<strong>medida formativa de carácter preventivo y correctivo</strong> orientada a promover el cumplimiento de los deberes del aprendiz y la superación de las situaciones evidenciadas. En consecuencia, <strong>deberá dar cumplimiento a las siguientes recomendaciones de mejoramiento disciplinario</strong>, orientadas a corregir las situaciones evidenciadas y fortalecer el cumplimiento de los deberes establecidos en el Reglamento del Aprendiz SENA:'
+ : '<strong>medida formativa de carácter preventivo</strong> orientada a promover la permanencia, la continuidad y el fortalecimiento de su proceso de formación. En consecuencia, deberá dar cumplimiento a las siguientes orientaciones académicas, las cuales tienen como propósito fortalecer su proceso de aprendizaje, mejorar su desempeño académico y garantizar el cumplimiento de los compromisos adquiridos durante su formación:'}</p>
+ <p style="margin-bottom:6px;"><strong>${disc?'Recomendaciones de mejoramiento disciplinario':'Orientaciones académicas'}:</strong></p>
+ <ul style="margin:0 0 16px 18px;padding:0;">${recs.map(r=>`<li style="text-align:justify;margin-bottom:6px;">${r}</li>`).join('')}</ul>
  <hr style="border:none;border-top:1px solid #ccc;margin:18px 0;">
- <p style="text-align:justify;margin-bottom:10px;"><strong>Se informa que el incumplimiento de las recomendaciones aquí establecidas o la persistencia de las conductas que dieron origen al presente llamado de atención dará lugar a la aplicación de la siguiente medida formativa, consistente en la formulación y ejecución de un Plan de Mejoramiento ${tipoLlamado==='disciplinario'?'Disciplinario':'Académico'}, conforme a lo dispuesto en el Acuerdo 0009 de 2024 del Reglamento del Aprendiz SENA.</strong></p>
+ <p style="text-align:justify;margin-bottom:10px;">${disc
+ ? 'Se informa que <strong>el incumplimiento de las recomendaciones</strong> aquí establecidas o la persistencia de las conductas que dieron origen al presente llamado de atención dará lugar a la aplicación de la siguiente medida formativa, consistente en la formulación y ejecución de un <strong>Plan de Mejoramiento Disciplinario</strong>, conforme a lo dispuesto en el <strong>Acuerdo 0009 de 2024 del Reglamento del Aprendiz SENA.</strong>'
+ : 'El incumplimiento de las anteriores recomendaciones de mejoramiento académico o la persistencia de las situaciones aquí descritas dará lugar a la aplicación de la siguiente medida formativa, correspondiente a la formulación e implementación de un Plan de Mejoramiento Académico, de conformidad con lo establecido en el Reglamento del Aprendiz SENA.'}</p>
 
  <div style="margin-top:16px;display:flex;gap:24px;flex-wrap:wrap;">
  <div style="flex:1;min-width:180px;border-top:2px solid #333;padding-top:6px;"><strong>${getFirmante().toUpperCase()}</strong><br>${getCargoFirmante().replace('\n','<br>')}</div>
  ${firmaCoordinadorLlamado() ? `<div style="flex:1;min-width:180px;border-top:2px solid #333;padding-top:6px;"><strong>${firmaCoordinadorLlamado().nombre.toUpperCase()}</strong><br>${firmaCoordinadorLlamado().cargo.replace('\n','<br>')}</div>` : ''}
- </div>`
+ </div>`; })()
  : `<p style="text-align:justify;">La presente comunicación corresponde a un <strong>${tituloLlamado}</strong>, de conformidad con lo establecido en el <strong>Capítulo VIII, Artículo 46, numeral 2, del Acuerdo 0009 de 2024 del Reglamento del Aprendiz SENA</strong>, el cual <strong>contempla esta medida formativa de carácter preventivo</strong>, orientada a promover el cumplimiento de los deberes del aprendiz, fortalecer su permanencia en el proceso formativo y prevenir situaciones que puedan afectar su formación integral. En este sentido, se espera que asuma los compromisos necesarios para mejorar su comportamiento y garantizar el cumplimiento de los deberes establecidos en el Reglamento del Aprendiz SENA. <strong>De persistir los incumplimientos aquí descritos o de presentarse nuevamente conductas similares, se procederá a aplicar la siguiente medida formativa, correspondiente al Segundo Llamado de Atención ${tipoLlamado==='disciplinario'?'Disciplinario':'Académico'}</strong>, conforme a lo dispuesto en el Artículo 46 del Acuerdo 0009 de 2024.</p>`;
 
  const pieFirmante = esSegundo ? '' : `
@@ -2781,11 +2802,7 @@ function buildPreviewHTML(){
  </table>
 
  <p style="text-align:justify;margin-bottom:8px;"><strong>1.&nbsp;&nbsp;&nbsp;Identificación de la falta y fundamento normativo</strong></p>
- <p style="text-align:justify;margin-bottom:14px;">${
- esSegundo && tipoLlamado==='academico'
- ? `Durante el seguimiento a su proceso formativo, se identificó la persistencia de una <strong>falta académica</strong> relacionada con el caso <strong>"${falta.label||''}"</strong>, asociada al <strong>${falta.articulo||''}</strong>, <strong>${falta.parrafo1||''}</strong>`
- : `Durante el seguimiento a su proceso formativo, se identificó una <strong>${tipoFaltaTexto}</strong> relacionada con <strong>"${falta.label||''}"</strong>, asociada al <strong>${falta.articulo||''}</strong>, <strong>${falta.parrafo1||''}</strong>`
- }</p>
+ <p style="text-align:justify;margin-bottom:14px;">${htmlSegs(segsFalta1(falta, esSegundo && tipoLlamado==='academico', tipoFaltaTexto))}</p>
 
  <p style="text-align:justify;margin-bottom:8px;"><strong>2.&nbsp;&nbsp;&nbsp;Descripción de la situación</strong></p>
  <p style="text-align:justify;margin-bottom:14px;">${parrafo2}</p>
