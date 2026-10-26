@@ -1952,13 +1952,11 @@ const RECS_ACAD_POR_FALTA = {
   'Respetar los derechos de autor y la propiedad intelectual en los trabajos y evidencias que presente, citando siempre las fuentes consultadas.',
   'Elaborar nuevamente las evidencias cuestionadas con trabajo propio, dentro del plazo que defina el instructor.',
   'Aplicar las normas de citación y referenciación indicadas por el instructor en todos los trabajos y evidencias de aprendizaje.',
-  'Consultar al instructor, antes de entregar sus trabajos, cualquier duda sobre el uso y la citación de fuentes.',
-  'Participar en las actividades de orientación sobre integridad académica y uso responsable de fuentes de información que defina el equipo ejecutor.'
+  'Consultar al instructor, antes de entregar sus trabajos, cualquier duda sobre el uso y la citación de fuentes.'
  ],
  suplantacion: [
   'Realizar personalmente las evaluaciones y actividades de aprendizaje, haciendo uso de sus conocimientos, esfuerzo y autoría propios.',
   'Abstenerse de presentar como propio el trabajo de otra persona y de permitir que un tercero desarrolle sus evidencias de aprendizaje.',
-  'Presentar nuevamente la actividad cuestionada, desarrollada directamente por el aprendiz, en el plazo que defina el instructor.',
   'Sustentar ante el instructor el contenido y el desarrollo de sus evidencias de aprendizaje cuando así se le solicite.',
   'Solicitar acompañamiento al instructor cuando tenga dificultades con una actividad, en lugar de recurrir a terceros.'
  ]
@@ -4128,7 +4126,7 @@ function procesarReporte(file){
 
  // Actualizar drop zone
  document.getElementById('drop-zone').style.borderColor = 'var(--green)';
- document.getElementById('drop-zone').innerHTML = `<p style="font-size:13px;font-weight:600;color:var(--green-mid);">Archivo cargado: ${file.name}</p>`;
+ document.getElementById('drop-zone').innerHTML = `<p style="font-size:13px;font-weight:600;color:var(--green-mid);">Archivo cargado: ${file.name}</p><button type="button" class="btn btn-secondary" style="margin-top:10px;padding:6px 14px;font-size:13px;" onclick="event.stopPropagation();limpiarReporte('p')">Quitar reporte</button>`;
 
  } catch(err){
  status.style.background = '#fff0f0';
@@ -4165,15 +4163,59 @@ function seleccionarAprendiz(idx){
 
 let competencias = [], actividades = [];
 
+
+// ===== Reinicio de los planes de mejoramiento (al entrar de nuevo o al quitar el reporte) =====
+let DROP_ORIG = {};
+document.addEventListener('DOMContentLoaded', () => { ['drop-zone','d-drop-zone'].forEach(id => { const e = document.getElementById(id); if(e) DROP_ORIG[id] = e.innerHTML; }); });
+function limpiarCamposPlan(prefijo){
+ for(let i=1;i<=5;i++){
+  const pn = document.getElementById(prefijo+i); if(!pn) continue;
+  pn.querySelectorAll('input, textarea, select').forEach(el => {
+   if(el.type==='file'){ try{ el.value=''; }catch(e){} return; }
+   if(el.type==='radio' || el.type==='checkbox'){ el.checked = el.defaultChecked; return; }
+   if(el.tagName==='SELECT'){ let alguna=false; [...el.options].forEach(o => { o.selected = o.defaultSelected; if(o.defaultSelected) alguna=true; }); if(!alguna) el.selectedIndex = el.options.length ? 0 : -1; return; }
+   el.value = el.defaultValue;
+  });
+ }
+}
+function resetPlanAcademico(){
+ limpiarCamposPlan('ppanel');
+ reporteData = { aprendices: [], competencias: [], competenciasPorAprendiz: {} };
+ const dz = document.getElementById('drop-zone');
+ if(dz && DROP_ORIG['drop-zone']){ dz.innerHTML = DROP_ORIG['drop-zone']; dz.style.borderColor = 'var(--border)'; }
+ const st = document.getElementById('reporte-status'); if(st){ st.style.display='none'; st.textContent=''; }
+ const cs = document.getElementById('campo-selector-aprendiz'); if(cs) cs.style.display='none';
+ const sel = document.getElementById('p-selector-aprendiz'); if(sel) sel.innerHTML = '<option value="">Seleccionar aprendiz...</option>';
+ try{ toggleCondicion('no'); }catch(e){}
+ pGoTo(1);
+}
+function resetPlanDisciplinario(){
+ limpiarCamposPlan('dpanel');
+ reporteDisc = { aprendices: [] };
+ actividadesDisc = [];
+ const dz = document.getElementById('d-drop-zone');
+ if(dz && DROP_ORIG['d-drop-zone']){ dz.innerHTML = DROP_ORIG['d-drop-zone']; dz.style.borderColor = 'var(--border)'; }
+ const st = document.getElementById('d-reporte-status'); if(st){ st.style.display='none'; st.textContent=''; }
+ const cs = document.getElementById('d-campo-selector'); if(cs) cs.style.display='none';
+ const sel = document.getElementById('d-selector-aprendiz'); if(sel) sel.innerHTML = '<option value="">Seleccionar aprendiz...</option>';
+ dGoTo(1);
+}
+function limpiarReporte(cual){
+ if(!confirm('¿Quitar el reporte cargado y limpiar los datos que se completaron con él?')) return;
+ if(cual==='d'){ resetPlanDisciplinario(); initPlanDisciplinario(); } else { resetPlanAcademico(); initPlan(); }
+}
+
 function abrirSubherramienta(id){
  document.querySelectorAll('#h-planes .herramienta').forEach(h=>h.style.display='none');
  document.getElementById('h-'+id).style.display='block';
  document.getElementById('header-h1').textContent = id==='plan-academico' ? 'Plan de Mejoramiento Académico' : (id==='plan-disciplinario' ? 'Plan de Mejoramiento Disciplinario' : 'Plan de Mejoramiento');
  document.getElementById('header-p').textContent = 'Régimen de Medidas Formativas — Acuerdo 0009 de 2024';
  if(id==='plan-academico'){
+ resetPlanAcademico();
  initPlan();
  }
  if(id==='plan-disciplinario'){
+ resetPlanDisciplinario();
  initPlanDisciplinario();
  }
 }
@@ -5579,6 +5621,8 @@ function procesarReporteDisc(file){
    const dz = document.getElementById('d-drop-zone');
    dz.style.borderColor = 'var(--green)';
    dz.querySelector('p').textContent = 'Archivo cargado: ' + file.name;
+   dz.querySelectorAll('.btn-quitar').forEach(b=>b.remove());
+   dz.insertAdjacentHTML('beforeend', `<button type="button" class="btn btn-secondary btn-quitar" style="margin-top:10px;padding:6px 14px;font-size:13px;" onclick="event.stopPropagation();limpiarReporte('d')">Quitar reporte</button>`);
   } catch(err){
    status.style.background = '#fff0f0'; status.style.color = '#c0392b';
    status.textContent = 'Error al leer el archivo: ' + err.message;
