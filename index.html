@@ -1927,7 +1927,7 @@ function segmentosDiasFalta(k, instr, dias, idx, total){
  if(k==='impuntualidad'){
   seg.push({t:ini+' los registros de asistencia y los reportes realizados por '},{t:instr,b:true},{t:', se evidencia que su asistencia ha sido impuntual '},{t:dias,b:true},{t:' del presente año.'});
  } else {
-  seg.push({t:ini+' los registros de inasistencia y los reportes realizados por '},{t:instr,b:true},{t:', se evidencia que su inasistencia'+(continuidadDias(k)?' '+continuidadDias(k):'')+' '},{t:dias,b:true},{t:' del presente año y no ha sido justificado su incumplimiento en las actividades de la formación.'});
+  seg.push({t:ini+' los registros de inasistencia y los reportes realizados por '},{t:instr,b:true},{t:', se evidencia que su inasistencia'+(continuidadDias(k)?' es '+continuidadDias(k):'')+' '},{t:dias,b:true},{t:' del presente año y no ha sido justificado su incumplimiento en las actividades de la formación.'});
  }
  if(idx===total-1) seg.push({t:(total>1?' Situaciones que afectan':' Situación que afecta')+CIERRE_DIAS});
  return seg;
