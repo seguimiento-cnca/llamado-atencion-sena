@@ -690,6 +690,7 @@ window.addEventListener('load', ()=>{
 
  </div>
 
+ <div style="text-align:center;color:rgba(255,255,255,.65);font-size:11px;margin-top:18px;">Versión 1 · actualización 28/10/2026 (estadísticas)</div>
  </div>
 </div>
 
@@ -3337,16 +3338,17 @@ async function admgPintar(){
  if(!cuerpo) return;
  const pedir = async ruta => { try{ return await sbFetch(ruta); }catch(e){ return null; } };
  const hace30 = new Date(Date.now() - 30*864e5).toISOString().slice(0,10);
- let [fichas, apr, inas, hist] = await Promise.all([
-  pedir('fichas?select=id,numero,programa,grupo'),
-  pedir('aprendices?select=ficha_id,estado'),
-  pedir('inasistencias?fecha=gte.'+hace30+'&select=ficha_id'),
-  pedir('historial_documentos?select=tipo_documento,programa,ficha,fecha_generacion,created_at&created_at=gte.2026-10-28T00%3A00%3A00-05%3A00')
- ]);
- if(!fichas) fichas = await pedir('fichas?select=id,numero,programa');
- if(!apr) apr = await pedir('aprendices?select=ficha_id');
- if(!fichas && !hist){ sub.textContent = 'No se pudieron cargar los datos. Revisa tu conexión.'; cuerpo.innerHTML = ''; return; }
- fichas = fichas || []; apr = apr || []; hist = hist || [];
+ // Versión 1: la estadística se basa solo en lo que tiene llamados o planes. Los aprendices cargados desde reportes (PDF/Excel) sin ningún documento no cuentan.
+ let hist = await pedir('historial_documentos?select=tipo_documento,programa,ficha,nombre_aprendiz,documento_aprendiz,fecha_generacion,created_at&created_at=gte.2026-10-28T00%3A00%3A00-05%3A00');
+ if(!hist){ sub.textContent = 'No se pudieron cargar los datos. Revisa tu conexión.'; cuerpo.innerHTML = ''; return; }
+ const fichas = [], apr = [], inas = [], _vF = {}, _vA = {};
+ hist.forEach(h => {
+  const num = String(h.ficha||'').trim(); if(!num) return;
+  if(!_vF[num]){ _vF[num] = true; fichas.push({id: num, numero: num, programa: h.programa||'', grupo: ''}); }
+  const ka = num+'|'+(h.documento_aprendiz||'')+'|'+admgNorm(h.nombre_aprendiz);
+  if(!_vA[ka]){ _vA[ka] = true; apr.push({ficha_id: num, estado: 'EN FORMACION'}); }
+  inas.push({ficha_id: num});
+ });
  const hoy = new Date(), meses = [];
  for(let i = 5; i >= 0; i--){
   const d = new Date(hoy.getFullYear(), hoy.getMonth()-i, 1);
@@ -3374,14 +3376,14 @@ async function admgPintar(){
  progs.forEach(p => { p.apr = p.fichas.reduce((s,f) => s+f.apr, 0); p.fichas.sort((a,b) => b.inas-a.inas || b.apr-a.apr); });
  progs.sort((a,b) => b.apr-a.apr || a.nombre.localeCompare(b.nombre));
  ADMG.d = {fichas: Object.values(F), F, progs, P, docs, meses, hayInas: !!inas}; ADMG.prog = null; ADMG.ficha = null;
- sub.textContent = progs.length ? 'Haz clic en un programa para ver sus fichas, y en una ficha para ver solo sus datos. Otro clic sobre lo mismo quita la selección.' : 'Todavía no hay fichas cargadas. Abajo se ve el movimiento de documentos.';
+ sub.textContent = progs.length ? 'Haz clic en un programa para ver sus fichas, y en una ficha para ver solo sus datos. Otro clic sobre lo mismo quita la selección.' : 'Todavía no hay llamados ni planes registrados desde el 28/10/2026.';
  const tope = Math.max(1, ...progs.map(p => p.apr));
  cuerpo.innerHTML = `
   <div class="g-foco"><small>Estás viendo</small><b id="admg-foco"></b><button type="button" id="admg-todos" style="visibility:hidden">Ver todos los programas</button></div>
   <div class="g-datos" id="admg-t"></div>
   <div class="g-nota" id="admg-nota"></div>
   <div class="g-dos">
-   <div class="g-caja"><h4>Aprendices en formación por programa</h4><div class="g-lista" id="admg-p">${progs.length ? progs.map(p => `<div class="g-it" data-prog="${admgEsc(p.k)}"><div class="g-nom"><span>${admgEsc(p.nombre)}</span><b>${p.apr} <small>· ${p.fichas.length} ficha${p.fichas.length===1?'':'s'}</small></b></div><div class="g-pista"><div class="g-barra" style="width:${Math.max(2, Math.round(p.apr/tope*100))}%"></div></div></div>`).join('') : '<div class="g-vacio">Cuando un líder cargue los reportes de fichas, aquí aparecen los programas.</div>'}</div></div>
+   <div class="g-caja"><h4>Aprendices con llamados o planes por programa</h4><div class="g-lista" id="admg-p">${progs.length ? progs.map(p => `<div class="g-it" data-prog="${admgEsc(p.k)}"><div class="g-nom"><span>${admgEsc(p.nombre)}</span><b>${p.apr} <small>· ${p.fichas.length} ficha${p.fichas.length===1?'':'s'}</small></b></div><div class="g-pista"><div class="g-barra" style="width:${Math.max(2, Math.round(p.apr/tope*100))}%"></div></div></div>`).join('') : '<div class="g-vacio">Cuando se generen llamados o planes, aquí aparecen los programas.</div>'}</div></div>
    <div class="g-der">
     <div class="g-caja"><h4 id="admg-ft"></h4><div class="g-lista" id="admg-f"></div></div>
     <div class="g-caja"><div class="g-cab"><h4 id="admg-mt"></h4>
@@ -3390,7 +3392,7 @@ async function admgPintar(){
     </div>
    </div>
   </div>
-  <details><summary>Ver los datos en tabla</summary><div class="g-tabla"><table><tr><th>Programa</th><th>Fichas</th><th>En formación</th><th>Fuera de formación</th><th>Inasistencias (30 días)</th><th>Documentos (6 meses)</th></tr>${progs.map(p => `<tr><td>${admgEsc(p.nombre)}</td><td>${p.fichas.length}</td><td>${p.apr}</td><td>${p.fichas.reduce((s,f)=>s+f.fuera,0)}</td><td>${inas ? p.fichas.reduce((s,f)=>s+f.inas,0) : '—'}</td><td>${docs.filter(d => d.prog === p.k).length}</td></tr>`).join('')}</table></div></details>`;
+  <details><summary>Ver los datos en tabla</summary><div class="g-tabla"><table><tr><th>Programa</th><th>Fichas</th><th>Aprendices con llamados o planes</th><th>Documentos</th></tr>${progs.map(p => `<tr><td>${admgEsc(p.nombre)}</td><td>${p.fichas.length}</td><td>${p.apr}</td><td>${docs.filter(d => d.prog === p.k).length}</td></tr>`).join('')}</table></div></details>`;
  // Un solo juego de eventos para todo el bloque
  const fijar = (prog, ficha) => { if(ADMG.prog === prog && ADMG.ficha === ficha) return; const cambiaProg = ADMG.prog !== prog; ADMG.prog = prog; ADMG.ficha = ficha; admgActualizar(cambiaProg); };
  cuerpo.onclick = e => {
@@ -3422,8 +3424,8 @@ function admgActualizar(rehacerFichas){
   inas: '<rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M8 3v4M16 3v4M4 10h16M10 13.5l4 4M14 13.5l-4 4"/>',
   doc: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>'};
  const dato = (v, t, i, fondo, tinta) => `<div class="g-dato"><span class="g-ico" style="background:${fondo};color:${tinta}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ico[i]}</svg></span><div><b>${v}</b><span>${t}</span></div></div>`;
- document.getElementById('admg-t').innerHTML = dato(Fi ? 1 : grupo.length, Fi ? 'ficha seleccionada' : 'fichas cargadas', 'ficha', '#efe8fb', '#4B1FA6') + dato(nAp, 'aprendices en formación', 'apr', '#e6f0fc', '#1f5fb8')
-  + dato(D.hayInas ? suma('inas') : '—', 'inasistencias en los últimos 30 días', 'inas', '#fdeee6', '#c2470f') + dato(docs.length, 'llamados y planes en 6 meses', 'doc', '#e5f6f0', '#0f7a55');
+ document.getElementById('admg-t').innerHTML = dato(Fi ? 1 : grupo.length, Fi ? 'ficha seleccionada' : 'fichas con llamados o planes', 'ficha', '#efe8fb', '#4B1FA6') + dato(nAp, 'aprendices con llamados o planes', 'apr', '#e6f0fc', '#1f5fb8')
+  + dato(docs.length, 'llamados y planes desde el 28/10/2026', 'doc', '#e5f6f0', '#0f7a55');
  document.getElementById('admg-nota').textContent = nFu ? nFu + ' aprendiz' + (nFu===1?'':'es') + ' fuera de formación (retiro, cancelación, aplazamiento o traslado).' : '';
  const lp = document.getElementById('admg-p');
  lp.classList.toggle('g-con-foco', !!ADMG.prog);
@@ -3432,7 +3434,7 @@ function admgActualizar(rehacerFichas){
  if(rehacerFichas){
   const lista = (P ? P.fichas.slice() : D.fichas.slice().sort((a,b) => b.inas-a.inas || b.apr-a.apr).slice(0, 6));
   const tope = Math.max(1, ...lista.map(f => f.inas));
-  document.getElementById('admg-ft').textContent = P ? 'Fichas de este programa · inasistencias en 30 días' : 'Fichas con más inasistencias en 30 días';
+  document.getElementById('admg-ft').textContent = P ? 'Fichas de este programa · llamados y planes' : 'Fichas con más llamados y planes';
   lf.innerHTML = lista.length ? lista.map(f => `<div class="g-it" data-ficha="${admgEsc(f.id)}"><div class="g-nom"><span>${admgEsc(nomFicha(f))} <small>· ${f.apr} aprendices</small></span><b>${D.hayInas ? f.inas : '—'}</b></div><div class="g-pista"><div class="g-barra g-in" style="width:${f.inas ? Math.max(3, Math.round(f.inas/tope*100)) : 0}%"></div></div></div>`).join('') : '<div class="g-vacio">Sin fichas para mostrar.</div>';
  }
  lf.classList.toggle('g-con-foco', !!Fi);
@@ -7255,7 +7257,10 @@ const CORTE_ISO = '2026-10-28T00:00:00-05:00';
 const CORTE = new Date(CORTE_ISO);
 const CORTE_DIA = '2026-10-28';
 window.EST_CORTE = CORTE_ISO;
-const E = {usr:[], doc:[], listo:false, f:{alcance:'todos', uid:'', dim:'ficha', desde:CORTE_DIA, hasta:''}};
+const INV = !!window.EST_INVENTARIO; // v2: hay fichas y aprendices cargados por los líderes; v1 es solo generador de documentos
+const ESTADO_TXT = {'EN FORMACION':'En formación','RETIRO VOLUNTARIO':'Retiro voluntario','CANCELADO':'Cancelación de matrícula','APLAZADO':'Aplazado','TRASLADADO':'Trasladado','CONDICIONADO':'Condicionado','EN PLAN DE MEJORAMIENTO':'En plan de mejoramiento'};
+const estTxt = e => ESTADO_TXT[e] || String(e||'En formación');
+const E = {usr:[], doc:[], inv:{fichas:[], apr:[]}, listo:false, f:{alcance:'todos', uid:'', dim:'ficha', desde:CORTE_DIA, hasta:''}};
 
 const esc = t => String(t==null?'':t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const norm = t => String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
@@ -7290,7 +7295,12 @@ async function cargarDatos(){
     pedirTodo('usuarios?select=id,nombre,usuario,cargo,activo,es_admin,debe_cambiar_password&order=id.asc'),
     pedirTodo('historial_documentos?select=id,usuario_id,nombre_usuario,tipo_documento,tipo_llamado,numero_llamado,nombre_aprendiz,documento_aprendiz,ficha,programa,falta,fecha_documento,fecha_generacion,created_at&created_at=gte.'+encodeURIComponent(CORTE_ISO)+'&order=id.asc')
   ]);
-  E.usr = u; E.doc = d; E.listo = true;
+  E.usr = u; E.doc = d;
+  if(INV){
+    try{ const [fi,ap] = await Promise.all([pedirTodo('fichas?select=id,numero,programa,grupo&order=id.asc'), pedirTodo('aprendices?select=ficha_id,documento,estado&order=id.asc')]); E.inv = {fichas:fi||[], apr:ap||[]}; }
+    catch(e){ console.warn('inventario de aprendices no disponible', e); E.inv = {fichas:[], apr:[]}; }
+  }
+  E.listo = true;
 }
 
 /* ───────── Cálculo ───────── */
@@ -7357,6 +7367,24 @@ function calc(f){
   c.prior = c.aprs.filter(a=>a.prior);
   c.fichas = Object.values(pf).sort((a,b)=>b.n-a.n||a.ficha.localeCompare(b.ficha,'es'));
   c.fichas.forEach(o => { o.falta = (topDe(o.faltas)[0]||['—'])[0]; o.aprs = Object.values(o.apr).sort((a,b)=>(b.pl-a.pl)||(b.n-a.n)); });
+  // v2: control de aprendices por estado (en formación, retiro voluntario, cancelación…)
+  if(INV && E.inv.fichas.length){
+    const fById = {}; E.inv.fichas.forEach(f => { fById[String(f.id)] = f; });
+    const enScope = c.f.alcance==='todos' ? null : new Set(c.fichas.map(o=>o.ficha));
+    const est = {}, pf2 = {}, conDoc = {};
+    c.aprs.forEach(a => { conDoc[a.ficha] = (conDoc[a.ficha]||0)+1; });
+    E.inv.apr.forEach(a => {
+      const f = fById[String(a.ficha_id)]; if(!f) return; const num = String(f.numero);
+      if(enScope && !enScope.has(num)) return;
+      const e = a.estado || 'EN FORMACION';
+      const o = pf2[num] = pf2[num] || {ficha:num, programa:f.programa||'', total:0, est:{}};
+      o.total++; o.est[e] = (o.est[e]||0)+1; est[e] = (est[e]||0)+1;
+    });
+    const fl = Object.values(pf2).sort((a,b)=>b.total-a.total||a.ficha.localeCompare(b.ficha,'es'));
+    fl.forEach(o => { o.enF = o.est['EN FORMACION']||0; o.des = (o.est['RETIRO VOLUNTARIO']||0)+(o.est['CANCELADO']||0); o.otros = o.total-o.enF-o.des; o.con = conDoc[o.ficha]||0; o.pdes = pct(o.des,o.total); });
+    const total = fl.reduce((s,o)=>s+o.total,0);
+    c.inv = {fichas:fl, est, total, enF:est['EN FORMACION']||0, des:(est['RETIRO VOLUNTARIO']||0)+(est['CANCELADO']||0), porFicha:pf2};
+  }
   // faltas que se repiten entre instructores
   const total = c.instrConDocs.length;
   const porFalta = {};
@@ -7386,6 +7414,11 @@ function conclusiones(c){
     if(c.prior.length) t.push('Se identifican '+plural(c.prior.length,'aprendiz','aprendices')+' con reincidencia, segundo llamado o plan de mejoramiento; es el grupo que más preocupa y debe tener seguimiento individual.');
     else t.push('No se identifican aprendices con reincidencia en el periodo.');
   }
+  if(c.inv && c.inv.total){
+    t.push('De '+c.inv.total+' aprendices registrados en las fichas del alcance, '+c.inv.enF+' están en formación ('+pct(c.inv.enF,c.inv.total)+' %). '+plural(c.inv.des,'aprendiz se retiró','aprendices se retiraron')+' o '+(c.inv.des===1?'canceló':'cancelaron')+' matrícula ('+pct(c.inv.des,c.inv.total)+' % de deserción).');
+    const w = c.inv.fichas.slice().sort((a,b)=>b.des-a.des)[0];
+    if(w && w.des>=2) t.push('La ficha '+w.ficha+' presenta la mayor deserción: '+plural(w.des,'aprendiz','aprendices')+' ('+w.pdes+' % de sus aprendices registrados).');
+  }
   if(c.f.alcance==='todos' && c.nIna>0){
     const p = pct(c.nIna,c.todos.length);
     t.push(p+' % de los instructores ('+c.nIna+' de '+c.todos.length+') aún no ha ingresado a la plataforma ni ha cambiado la contraseña inicial'+(p>=30?', lo que significa que parte de los llamados puede estar quedando sin registro.':'.'));
@@ -7397,6 +7430,7 @@ function compromisos(c){
   if(c.f.alcance!=='uno' && c.f.alcance!=='activos' && c.selIna.length) r.push([`Contactar a los ${c.selIna.length} instructores sin ingreso para que cambien la contraseña inicial`, add(7), 'Administración']);
   const f0=c.fichas[0];
   if(f0 && c.fichas.length>1 && pct(f0.n,c.docs.length)>=35 && c.docs.length>=5) r.push([`Reunión de seguimiento con la ficha ${f0.ficha} sobre «${faltaCorta(f0.falta)}»`, add(9), 'Instructor líder de ficha']);
+  if(c.inv){ const w = c.inv.fichas.slice().sort((a,b)=>b.des-a.des)[0]; if(w && w.des>=2) r.push([`Revisar la ruta de prevención de la deserción en la ficha ${w.ficha}`, add(10), 'Líder de programa']); }
   if(c.prior.length) r.push([`Seguimiento individual a los ${c.prior.length} aprendices prioritarios`, add(14), 'Instructores de ficha']);
   if(c.repetidas.length) r.push([`Reforzar con los grupos la norma relacionada con «${faltaCorta(c.repetidas[0].falta)}»`, add(14), 'Coordinación']);
   if(!r.length) r.push(['Mantener el seguimiento periódico del uso de la plataforma', add(30), 'Administración']);
@@ -7501,6 +7535,7 @@ function generarPDF(c){
   fila('LUGAR Y/O ENLACE:', 'Plataforma Seguimiento a la Formación · Centro Nacional Colombo Alemán');
   const secciones = ['Estado de uso de la plataforma por los instructores.','Panorama general de los llamados de atención.'];
   const dimTxt = {ficha:'Análisis por ficha.', aprendiz:'Análisis por aprendiz.', instructor:'Análisis por instructor.', tipo:'Análisis por tipo de llamado.', falta:'Análisis por tipo de falta.'};
+  if(c.inv && c.inv.total) secciones.push('Estado de los aprendices por ficha (en formación, retiro voluntario, cancelación).');
   secciones.push(dimTxt[c.f.dim]||dimTxt.ficha);
   secciones.push('Aprendices que requieren atención prioritaria.');
   if(c.repetidas.length) secciones.push('Faltas que se repiten en el grupo.');
@@ -7541,6 +7576,16 @@ function generarPDF(c){
     h3('Faltas más frecuentes'); barras(c.faltas.slice(0,8));
     if(c.f.alcance!=='uno' && c.instrConDocs.length>1){ h3('Instructores que más documentos generan'); barras(c.instrConDocs.slice(0,8).map(o=>[o.u.nombre,o.n]), {color:[31,95,139]}); }
   }
+  /* Estado de aprendices (solo v2) */
+  if(c.inv && c.inv.total){
+    h2((++n)+'. Estado de los aprendices por ficha');
+    const I=c.inv;
+    par('En '+plural(I.fichas.length,'ficha','fichas')+' hay '+I.total+' aprendices registrados: '+I.enF+' en formación ('+pct(I.enF,I.total)+' %), '+(I.est['RETIRO VOLUNTARIO']||0)+' con retiro voluntario y '+(I.est['CANCELADO']||0)+' con cancelación de matrícula. La deserción (retiro voluntario más cancelación) es de '+I.des+' aprendices ('+pct(I.des,I.total)+' %).'+(c.aprs.length?' Del total, '+c.aprs.length+' tienen llamados o planes en el periodo.':''));
+    h3('Resumen por estado'); barras(Object.entries(I.est).sort((a,b)=>b[1]-a[1]).map(([e,v])=>[estTxt(e),v]));
+    h3('Detalle por ficha');
+    tabla([{t:'Ficha',w:17},{t:'Programa',w:50},{t:'Total',w:11},{t:'En form.',w:13},{t:'Retiro vol.',w:14},{t:'Cancel.',w:13},{t:'Otros',w:11},{t:'Con docs',w:14},{t:'% deser.',w:14}],
+      I.fichas.map(o=>[o.ficha,faltaCorta(o.programa),String(o.total),String(o.enF),String(o.est['RETIRO VOLUNTARIO']||0),String(o.est['CANCELADO']||0),String(o.otros-0),String(o.con),{t:o.pdes+' %',b:o.pdes>=15,c:o.pdes>=15?ROJO:TX}]));
+  }
   /* 3. Dimensión */
   const dim = c.f.dim;
   h2((++n)+'. '+(dimTxt[dim]||dimTxt.ficha).replace(/\.$/,''));
@@ -7571,6 +7616,8 @@ function generarPDF(c){
     c.fichas.slice(0,12).forEach(o => {
       need(34); h3('Ficha '+o.ficha+(o.programa?' · '+faltaCorta(o.programa):''));
       par(parrafoFicha(o,c));
+      const iv = c.inv && c.inv.porFicha[o.ficha];
+      if(iv) par('De los '+iv.enF+' aprendices en formación de la ficha, '+o.aprs.length+' ('+pct(o.aprs.length,iv.enF)+' %) tienen llamados o planes.'+(iv.des?' Registra '+plural(iv.des,'caso','casos')+' de deserción.':''));
       const lista2 = o.aprs.filter(a=>a.n>=1).slice(0,8);
       if(lista2.length) tabla([{t:'Aprendiz',w:52},{t:'Documento',w:28},{t:'Docs',w:11},{t:'Falta principal',w:55},{t:'Situación',w:34}],
         lista2.map(a=>[a.nombre,a.doc,String(a.n),faltaCorta(a.falta),{t:a.sit,b:a.prior,c:a.prior?ROJO:TX}]));
@@ -7659,7 +7706,9 @@ function pintar(){
     ${tileHTML('Documentos',c.docs.length,'#1a1a1a')}
     ${tileHTML('Llamados',c.nLl,'#1565c0')}
     ${tileHTML('Planes',c.nPl,'#e65100')}
+    ${c.inv?tileHTML('Aprendices en formación',c.inv.enF,'#1565c0')+tileHTML('Retiro voluntario',c.inv.est['RETIRO VOLUNTARIO']||0,'#e65100')+tileHTML('Cancelación de matrícula',c.inv.est['CANCELADO']||0,'#c62828'):''}
   </div>
+  ${c.inv?`<div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:10px;">Aprendices por estado</div>${barraHTML(Object.entries(c.inv.est).sort((a,b)=>b[1]-a[1]).map(([e,v])=>[estTxt(e),v]),'#6a1b9a')}</div>`:''}
   <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:10px;">${dimTit}</div>${barraHTML(dimItems)}</div>
   <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:10px;">Faltas más frecuentes</div>${barraHTML(c.faltas.slice(0,8),'#2e7d32')}</div>
   <details style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:12px 14px;margin-bottom:10px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;">Instructores activos (${c.selAct.length})</summary><div style="font-size:12px;margin-top:8px;line-height:1.7;">${c.selAct.map(u=>esc(u.nombre)).join('<br>')||'—'}</div></details>
