@@ -556,7 +556,7 @@ window.addEventListener('load', ()=>{
  <div id="adash-activos" style="font-size:28px;font-weight:700;color:#b39ddb;">—</div>
  </div>
  <div style="background:rgba(255,255,255,0.12);border-radius:12px;padding:14px;border:1px solid rgba(255,255,255,0.2);">
- <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:4px;">SIN ACTIVIDAD</div>
+ <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:4px;">SIN INGRESO</div>
  <div id="adash-sinuso" style="font-size:28px;font-weight:700;color:#ffab91;">—</div>
  </div>
  </div>
@@ -648,6 +648,15 @@ window.addEventListener('load', ()=>{
  <div style="flex:1;">
  <div style="font-size:15px;font-weight:600;color:#1a1a1a;">Gestión de usuarios</div>
  <div style="font-size:12px;color:#666;">Crear, editar, restablecer contraseñas, carga masiva</div>
+ </div>
+ <span style="color:#1565c0;font-size:18px;">›</span>
+ </button>
+
+ <button class="adm-opt" onclick="adminIrA('estadisticas')" style="background:#fff;border:none;border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left;width:100%;">
+ <span style="font-size:24px;"></span>
+ <div style="flex:1;">
+ <div style="font-size:15px;font-weight:600;color:#1a1a1a;">Estadísticas y reportes</div>
+ <div style="font-size:12px;color:#666;">Uso de la plataforma, llamados por ficha, aprendiz o instructor · reporte en PDF</div>
  </div>
  <span style="color:#1565c0;font-size:18px;">›</span>
  </button>
@@ -2968,7 +2977,7 @@ function cerrarAdmin(){ document.getElementById('modal-admin').style.display='no
 async function cargarEstadisticas(){
  try{
  const [hist, usrs] = await Promise.all([
- sbFetch('historial_documentos?select=nombre_usuario,fecha_generacion,created_at,tipo_documento'),
+ sbFetch('historial_documentos?select=nombre_usuario,fecha_generacion,created_at,tipo_documento&created_at=gte.2026-10-28T00%3A00%3A00-05%3A00'),
  sbFetch('usuarios?select=nombre,activo&activo=eq.true')
  ]);
  const ahora = new Date();
@@ -3296,16 +3305,17 @@ async function cargarDashboardAdmin(){
  admgPintar();
  try{
  const [hist, usrs] = await Promise.all([
- sbFetch('historial_documentos?select=nombre_usuario,fecha_generacion,created_at'),
- sbFetch('usuarios?activo=eq.true&select=nombre')
+ sbFetch('historial_documentos?select=nombre_usuario,fecha_generacion,created_at&created_at=gte.2026-10-28T00%3A00%3A00-05%3A00'),
+ sbFetch('usuarios?activo=eq.true&select=nombre,usuario,debe_cambiar_password')
  ]);
  const ahora = new Date();
  const esMes = h=>{ const d=new Date(h.fecha_generacion||h.created_at); return d.getMonth()===ahora.getMonth()&&d.getFullYear()===ahora.getFullYear(); };
  document.getElementById('adash-total').textContent = hist.length;
  document.getElementById('adash-mes').textContent = hist.filter(esMes).length;
- document.getElementById('adash-activos').textContent = usrs.length;
+ const _inst = usrs.filter(u=>u.usuario!=='admin');
+ document.getElementById('adash-activos').textContent = _inst.filter(u=>!u.debe_cambiar_password).length;
  const conUso = new Set(hist.map(h=>h.nombre_usuario));
- document.getElementById('adash-sinuso').textContent = usrs.filter(u=>!conUso.has(u.nombre)).length;
+ document.getElementById('adash-sinuso').textContent = _inst.filter(u=>u.debe_cambiar_password).length;
  // Ranking
  const conteo = {};
  hist.filter(esMes).forEach(h=>{ conteo[h.nombre_usuario]=(conteo[h.nombre_usuario]||0)+1; });
@@ -3331,7 +3341,7 @@ async function admgPintar(){
   pedir('fichas?select=id,numero,programa,grupo'),
   pedir('aprendices?select=ficha_id,estado'),
   pedir('inasistencias?fecha=gte.'+hace30+'&select=ficha_id'),
-  pedir('historial_documentos?select=tipo_documento,programa,ficha,fecha_generacion,created_at')
+  pedir('historial_documentos?select=tipo_documento,programa,ficha,fecha_generacion,created_at&created_at=gte.2026-10-28T00%3A00%3A00-05%3A00')
  ]);
  if(!fichas) fichas = await pedir('fichas?select=id,numero,programa');
  if(!apr) apr = await pedir('aprendices?select=ficha_id');
@@ -3482,7 +3492,7 @@ function volverDashAdmin(){
 function adminIrA(seccion){
  document.getElementById('pantalla-admin').style.display='none';
  document.getElementById('subpanel-admin').style.display='block';
- const titulos = {usuarios:' Gestión de usuarios',historial:' Historial de documentos',novedades:' Novedades y anuncios',config:' Configuración'};
+ const titulos = {usuarios:' Gestión de usuarios',historial:' Historial de documentos',estadisticas:' Estadísticas y reportes',novedades:' Novedades y anuncios',config:' Configuración'};
  document.getElementById('subpanel-titulo').textContent = titulos[seccion]||seccion;
  const contenido = document.getElementById('subpanel-contenido');
 
@@ -3492,6 +3502,9 @@ function adminIrA(seccion){
  } else if(seccion==='historial'){
  contenido.innerHTML = getHTMLHistorial();
  cargarHistorial();
+ } else if(seccion==='estadisticas'){
+ contenido.innerHTML = '<div id="estat-root"></div>';
+ estatIniciar();
  } else if(seccion==='novedades'){
  contenido.innerHTML = getHTMLNovedades();
  cargarNovedades();
@@ -7233,5 +7246,445 @@ async function fxsSubirReportePlan(input){
 })();
 </script>
 
+<script id="mod-estadisticas">
+/* ═══ MÓDULO ESTADÍSTICAS Y REPORTES (administrador) ═══
+   Solo cuenta documentos generados desde EST_CORTE: lo anterior era etapa de desarrollo y no entra en ninguna estadística.
+   "Activo" = instructor que ya cambió la contraseña inicial (es decir, ya ingresó). "Sin ingreso" = aún con la contraseña inicial. */
+(function(){
+const CORTE_ISO = '2026-10-28T00:00:00-05:00';
+const CORTE = new Date(CORTE_ISO);
+const CORTE_DIA = '2026-10-28';
+window.EST_CORTE = CORTE_ISO;
+const E = {usr:[], doc:[], listo:false, f:{alcance:'todos', uid:'', dim:'ficha', desde:CORTE_DIA, hasta:''}};
+
+const esc = t => String(t==null?'':t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm = t => String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+const pad = n => String(n).padStart(2,'0');
+const fmtF = d => pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear();
+const hoyISO = () => { const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const fechaLarga = d => d.getDate()+' de '+MESES[d.getMonth()]+' de '+d.getFullYear();
+const pct = (a,b) => b ? Math.round(a*100/b) : 0;
+const plural = (n,s,p) => n+' '+(n===1?s:p);
+
+function faltaLabel(k){
+  if(!k) return 'Sin falta registrada';
+  try{ if(typeof FALTAS_DISC!=='undefined' && FALTAS_DISC[k]) return FALTAS_DISC[k].label; }catch(e){}
+  try{ if(typeof FALTAS_ACAD!=='undefined' && FALTAS_ACAD[k]) return FALTAS_ACAD[k].label; }catch(e){}
+  return String(k);
+}
+function faltaCorta(t){ t=String(t); return t.length>70 ? t.slice(0,67)+'…' : t; }
+
+async function pedirTodo(ruta){
+  let out=[], off=0;
+  for(;;){
+    const r = await sbFetch(ruta+(ruta.includes('?')?'&':'?')+'limit=1000&offset='+off);
+    out = out.concat(r||[]);
+    if(!r || r.length<1000) break;
+    off += 1000;
+  }
+  return out;
+}
+async function cargarDatos(){
+  const [u,d] = await Promise.all([
+    pedirTodo('usuarios?select=id,nombre,usuario,cargo,activo,es_admin,debe_cambiar_password&order=id.asc'),
+    pedirTodo('historial_documentos?select=id,usuario_id,nombre_usuario,tipo_documento,tipo_llamado,numero_llamado,nombre_aprendiz,documento_aprendiz,ficha,programa,falta,fecha_documento,fecha_generacion,created_at&created_at=gte.'+encodeURIComponent(CORTE_ISO)+'&order=id.asc')
+  ]);
+  E.usr = u; E.doc = d; E.listo = true;
+}
+
+/* ───────── Cálculo ───────── */
+function topDe(mapa){ return Object.entries(mapa).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'es')); }
+function calc(f){
+  const hoy = hoyISO();
+  const desde = new Date((f.desde||CORTE_DIA)+'T00:00:00-05:00');
+  const hasta = new Date((f.hasta||hoy)+'T23:59:59-05:00');
+  const todos = E.usr.filter(u => u.usuario!=='admin' && u.activo!==false).map(u => Object.assign({}, u, {estado: u.debe_cambiar_password ? 'inactivo' : 'activo'}));
+  let sel = todos;
+  if(f.alcance==='activos') sel = todos.filter(u=>u.estado==='activo');
+  else if(f.alcance==='inactivos') sel = todos.filter(u=>u.estado==='inactivo');
+  else if(f.alcance==='uno') sel = todos.filter(u=>String(u.id)===String(f.uid));
+  const ids = new Set(sel.map(u=>String(u.id))), nombres = new Set(sel.map(u=>u.nombre));
+  const docs = [];
+  E.doc.forEach(h => {
+    const d = new Date(h.created_at || h.fecha_generacion);
+    if(isNaN(d) || d<CORTE || d<desde || d>hasta) return;
+    if(!(ids.has(String(h.usuario_id)) || nombres.has(h.nombre_usuario))) return;
+    docs.push(Object.assign({}, h, {_d:d, _falta: faltaLabel(h.falta), _ficha: String(h.ficha||'').trim() || 'Sin ficha'}));
+  });
+  docs.sort((a,b)=>a._d-b._d);
+  const esPlan = h => h.tipo_documento==='plan';
+  const c = {f, desde, hasta, todos, sel, docs, hoy};
+  c.nAct = todos.filter(u=>u.estado==='activo').length;
+  c.nIna = todos.length - c.nAct;
+  c.selAct = sel.filter(u=>u.estado==='activo'); c.selIna = sel.filter(u=>u.estado==='inactivo');
+  c.nPl = docs.filter(esPlan).length;
+  c.llam = docs.filter(h=>!esPlan(h));
+  c.nLl = c.llam.length;
+  c.nDisc = c.llam.filter(h=>h.tipo_llamado==='disciplinario').length;
+  c.nAcad = c.llam.filter(h=>h.tipo_llamado==='academico').length;
+  c.nPrim = c.llam.filter(h=>h.numero_llamado==='primero').length;
+  c.nSeg = c.llam.filter(h=>h.numero_llamado==='segundo').length;
+  const fm = {}; docs.forEach(h => { fm[h._falta] = (fm[h._falta]||0)+1; });
+  c.faltas = topDe(fm);
+  // por instructor
+  const pi = {}; sel.forEach(u => { pi[u.id] = {u, n:0, ll:0, pl:0, faltas:{}, ult:null}; });
+  docs.forEach(h => {
+    let o = pi[h.usuario_id]; if(!o) o = Object.values(pi).find(x=>x.u.nombre===h.nombre_usuario); if(!o) return;
+    o.n++; if(esPlan(h)) o.pl++; else o.ll++; o.faltas[h._falta]=(o.faltas[h._falta]||0)+1; if(!o.ult||h._d>o.ult) o.ult=h._d;
+  });
+  c.instr = Object.values(pi).sort((a,b)=>b.n-a.n||a.u.nombre.localeCompare(b.u.nombre,'es'));
+  c.instrConDocs = c.instr.filter(o=>o.n>0);
+  // por ficha
+  const pf = {};
+  docs.forEach(h => {
+    const o = pf[h._ficha] = pf[h._ficha] || {ficha:h._ficha, programa:h.programa||'', n:0, ll:0, pl:0, seg:0, faltas:{}, apr:{}};
+    o.n++; if(esPlan(h)) o.pl++; else { o.ll++; if(h.numero_llamado==='segundo') o.seg++; }
+    o.faltas[h._falta]=(o.faltas[h._falta]||0)+1;
+  });
+  // por aprendiz
+  const pa = {};
+  docs.forEach(h => {
+    const k = (h.documento_aprendiz||'')+'|'+norm(h.nombre_aprendiz);
+    const o = pa[k] = pa[k] || {nombre:h.nombre_aprendiz||'(sin nombre)', doc:h.documento_aprendiz||'', ficha:h._ficha, n:0, ll:0, pl:0, seg:0, faltas:{}};
+    o.n++; if(esPlan(h)) o.pl++; else { o.ll++; if(h.numero_llamado==='segundo') o.seg++; }
+    o.faltas[h._falta]=(o.faltas[h._falta]||0)+1;
+    if(pf[h._ficha]) pf[h._ficha].apr[k]=o;
+  });
+  const sit = a => a.pl ? 'Plan de mejoramiento' : (a.seg || a.ll>=2) ? 'Segundo llamado' : 'Primer llamado';
+  Object.values(pa).forEach(a => { a.sit = sit(a); a.falta = (topDe(a.faltas)[0]||['—'])[0]; a.prior = a.pl>0 || a.seg>0 || a.n>=2; });
+  c.aprs = Object.values(pa).sort((a,b)=>(b.pl-a.pl)||(b.n-a.n)||a.nombre.localeCompare(b.nombre,'es'));
+  c.prior = c.aprs.filter(a=>a.prior);
+  c.fichas = Object.values(pf).sort((a,b)=>b.n-a.n||a.ficha.localeCompare(b.ficha,'es'));
+  c.fichas.forEach(o => { o.falta = (topDe(o.faltas)[0]||['—'])[0]; o.aprs = Object.values(o.apr).sort((a,b)=>(b.pl-a.pl)||(b.n-a.n)); });
+  // faltas que se repiten entre instructores
+  const total = c.instrConDocs.length;
+  const porFalta = {};
+  c.instrConDocs.forEach(o => Object.keys(o.faltas).forEach(k => { porFalta[k]=(porFalta[k]||0)+1; }));
+  c.repetidas = total>=3 ? topDe(porFalta).filter(([k,n])=>n>=2 && n*2>=total).map(([k,n])=>({falta:k, n, de:total})) : [];
+  return c;
+}
+
+/* ───────── Redacción del análisis ───────── */
+function textoAlcance(c){
+  const f=c.f;
+  if(f.alcance==='activos') return 'instructores activos';
+  if(f.alcance==='inactivos') return 'instructores sin ingreso';
+  if(f.alcance==='uno'){ const u=c.sel[0]; return 'instructor '+(u?u.nombre:''); }
+  return 'todos los instructores';
+}
+function conclusiones(c){
+  const t=[];
+  if(!c.docs.length){
+    t.push('En el periodo analizado no se registraron documentos para el alcance seleccionado. Las cifras de uso de la plataforma se presentan como línea base.');
+  } else {
+    t.push('En el periodo se generaron '+plural(c.docs.length,'documento','documentos')+' ('+plural(c.nLl,'llamado de atención','llamados de atención')+' y '+plural(c.nPl,'plan de mejoramiento','planes de mejoramiento')+').');
+    const f0 = c.fichas[0];
+    if(f0 && c.fichas.length>1 && pct(f0.n,c.docs.length)>=35 && c.docs.length>=5)
+      t.push('La ficha '+f0.ficha+' concentra el '+pct(f0.n,c.docs.length)+' % de los documentos del periodo, por lo que requiere acompañamiento prioritario.');
+    if(c.faltas.length && c.docs.length>=3) t.push('La falta más frecuente es «'+faltaCorta(c.faltas[0][0])+'» ('+c.faltas[0][1]+' casos, '+pct(c.faltas[0][1],c.docs.length)+' %).');
+    if(c.prior.length) t.push('Se identifican '+plural(c.prior.length,'aprendiz','aprendices')+' con reincidencia, segundo llamado o plan de mejoramiento; es el grupo que más preocupa y debe tener seguimiento individual.');
+    else t.push('No se identifican aprendices con reincidencia en el periodo.');
+  }
+  if(c.f.alcance==='todos' && c.nIna>0){
+    const p = pct(c.nIna,c.todos.length);
+    t.push(p+' % de los instructores ('+c.nIna+' de '+c.todos.length+') aún no ha ingresado a la plataforma ni ha cambiado la contraseña inicial'+(p>=30?', lo que significa que parte de los llamados puede estar quedando sin registro.':'.'));
+  }
+  return t;
+}
+function compromisos(c){
+  const r=[]; const add = n => { const d=new Date(); d.setDate(d.getDate()+n); return fmtF(d); };
+  if(c.f.alcance!=='uno' && c.f.alcance!=='activos' && c.selIna.length) r.push([`Contactar a los ${c.selIna.length} instructores sin ingreso para que cambien la contraseña inicial`, add(7), 'Administración']);
+  const f0=c.fichas[0];
+  if(f0 && c.fichas.length>1 && pct(f0.n,c.docs.length)>=35 && c.docs.length>=5) r.push([`Reunión de seguimiento con la ficha ${f0.ficha} sobre «${faltaCorta(f0.falta)}»`, add(9), 'Instructor líder de ficha']);
+  if(c.prior.length) r.push([`Seguimiento individual a los ${c.prior.length} aprendices prioritarios`, add(14), 'Instructores de ficha']);
+  if(c.repetidas.length) r.push([`Reforzar con los grupos la norma relacionada con «${faltaCorta(c.repetidas[0].falta)}»`, add(14), 'Coordinación']);
+  if(!r.length) r.push(['Mantener el seguimiento periódico del uso de la plataforma', add(30), 'Administración']);
+  return r;
+}
+function parrafoUso(c){
+  const f=c.f;
+  if(f.alcance==='uno'){
+    const u=c.sel[0]; if(!u) return 'No se encontró el instructor seleccionado.';
+    const o=c.instr[0];
+    return u.nombre+' se encuentra '+(u.estado==='activo'?'activo en la plataforma: ya ingresó y cambió la contraseña inicial.':'sin ingreso: nunca ha ingresado a la plataforma ni ha cambiado la contraseña inicial.')+' En el periodo generó '+plural(o.n,'documento','documentos')+' ('+plural(o.ll,'llamado de atención','llamados de atención')+' y '+plural(o.pl,'plan de mejoramiento','planes de mejoramiento')+')'+(o.n&&o.ult?', el último el '+fmtF(o.ult)+'.':'.');
+  }
+  if(f.alcance==='activos') return 'En la plataforma los instructores que se encuentran activos son '+c.selAct.length+' de '+c.todos.length+' registrados ('+pct(c.selAct.length,c.todos.length)+' %). Se consideran activos quienes ya ingresaron y cambiaron la contraseña inicial. Su detalle es el siguiente:';
+  if(f.alcance==='inactivos') return 'Los instructores que no se encuentran activos son '+c.selIna.length+' de '+c.todos.length+' registrados ('+pct(c.selIna.length,c.todos.length)+' %). Nunca han ingresado a la plataforma: no han cambiado la contraseña inicial. Se recomienda contactarlos. Su detalle es el siguiente:';
+  const top = c.instrConDocs.slice(0,3).map(o=>o.u.nombre+' ('+o.n+')').join(', ');
+  return 'Al cierre del periodo hay '+c.todos.length+' instructores registrados. De ellos, '+c.nAct+' están activos ('+pct(c.nAct,c.todos.length)+' %) y '+c.nIna+' nunca han ingresado ni han cambiado la contraseña inicial ('+pct(c.nIna,c.todos.length)+' %).'+(top?' Los que más documentos generaron son '+top+'.':'');
+}
+function parrafoFicha(o,c){
+  const p = pct(o.n,c.docs.length);
+  const s = 'La ficha registra '+plural(o.n,'documento','documentos')+' en el periodo ('+p+' % del total)'+(o.seg?', con '+plural(o.seg,'segundo llamado','segundos llamados'):'')+(o.pl?' y '+plural(o.pl,'plan de mejoramiento','planes de mejoramiento'):'')+'. La falta principal es «'+faltaCorta(o.falta)+'» ('+(o.faltas[o.falta]||0)+' casos).';
+  const alerta = c.fichas.length>1 && p>=35 && c.docs.length>=5;
+  return s+(alerta?' Es la ficha que más preocupa: concentra más de un tercio de los documentos de la plataforma.':(o.seg||o.pl?' Se sugiere seguimiento a los aprendices reincidentes.':' La situación es estable.'));
+}
+
+/* ───────── PDF ───────── */
+function generarPDF(c){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4'});
+  const M=14, W=182, TOP=14, BOT=281;
+  const VERDE=[43,122,11], CLARO=[232,242,227], BORDE=[107,125,110], TX=[28,42,31], GRIS=[74,90,77], ROJO=[154,52,18];
+  const hoy = new Date();
+  const numero = 'EST-'+hoy.getFullYear()+pad(hoy.getMonth()+1)+pad(hoy.getDate())+'-'+pad(hoy.getHours())+pad(hoy.getMinutes());
+  const titulo = 'SEGUIMIENTO AL USO DE LA PLATAFORMA Y A LOS LLAMADOS DE ATENCIÓN';
+  let y = TOP;
+  const LH = pt => pt*0.3528*1.28;
+  const font = (b,s,col) => { doc.setFont('helvetica', b?'bold':'normal'); doc.setFontSize(s); doc.setTextColor.apply(doc, col||TX); };
+  const logo = (x,yy,s) => { try{ doc.addImage('data:image/jpeg;base64,'+LOGO_B64,'JPEG',x,yy,s,s); }catch(e){} };
+  const newPage = () => { doc.addPage(); y=TOP; cab(true); y+=3; };
+  const need = h => { if(y+h>BOT) newPage(); };
+  function cab(corto){
+    doc.setDrawColor.apply(doc,BORDE); doc.setLineWidth(.25);
+    const h = corto?15:22;
+    doc.rect(M,y,W,h); doc.line(M+30,y,M+30,y+h); doc.line(M+W-42,y,M+W-42,y+h);
+    logo(M+(30-(h-4))/2, y+2, h-4);
+    font(true, corto?9:12); doc.text('REPORTE ESTADÍSTICO DE SEGUIMIENTO', M+30+(W-72)/2, y+(corto?6.2:8.5), {align:'center'});
+    font(false, 8, GRIS); doc.text('Plataforma «Seguimiento a la Formación»', M+30+(W-72)/2, y+(corto?10.5:13.5), {align:'center'});
+    font(true, 8.5); doc.text('REPORTE No.', M+W-40, y+(corto?6:8.5)); font(false,8.5); doc.text(numero, M+W-40, y+(corto?11:13.5));
+    y += h;
+  }
+  function fila(label, valor, h){
+    const lw = 40; font(false,9); const lines = doc.splitTextToSize(String(valor), W-lw-4);
+    font(true,8.5); const ll = doc.splitTextToSize(label, lw-4);
+    const hh = Math.max(h||0, lines.length*LH(9)+3.4, ll.length*LH(8.5)+3.4);
+    need(hh);
+    doc.setFillColor.apply(doc,CLARO); doc.rect(M,y,lw,hh,'FD'); doc.rect(M+lw,y,W-lw,hh);
+    font(true,8.5); doc.text(ll, M+2, y+4.4);
+    font(false,9); doc.text(lines, M+lw+2, y+4.4);
+    y += hh;
+  }
+  function banda(t){ need(7+22); doc.setFillColor.apply(doc,VERDE); doc.setDrawColor.apply(doc,BORDE); doc.rect(M,y,W,7,'FD'); font(true,10,[255,255,255]); doc.text(t, M+W/2, y+4.8, {align:'center'}); y+=7; }
+  function h2(t){ need(16); y+=3; font(true,10.5,VERDE); doc.text(t, M, y+3.5); y+=7; }
+  function h3(t){ need(14); font(true,9.5); doc.text(t, M, y+3); y+=5.6; }
+  function par(t, o){ o=o||{}; const s=o.size||9.5; font(!!o.bold,s,o.color); const lines=doc.splitTextToSize(String(t), W-(o.indent||0)); const lh=LH(s);
+    lines.forEach(l => { need(lh+0.5); font(!!o.bold,s,o.color); doc.text(l, M+(o.indent||0), y+lh*0.8); y+=lh; }); y+=(o.gap==null?2:o.gap); }
+  function lista(items){ items.forEach(t => par('•  '+t, {indent:3, gap:1})); y+=1.5; }
+  function tabla(cols, rows, o){
+    o=o||{}; const sz=o.size||8.5, lh=LH(sz), padv=1.6;
+    const tw = cols.reduce((s,k)=>s+k.w,0); const k = W/tw; cols = cols.map(x=>Object.assign({},x,{w:x.w*k}));
+    const medir = (cells,bold) => { font(bold,sz); return Math.max(...cells.map((t,i)=>{ const v=(t&&t.t!=null)?t.t:t; return doc.splitTextToSize(String(v==null?'':v), cols[i].w-3.2).length; }))*lh+padv*2; };
+    const hH = medir(cols.map(x=>x.t), true);
+    const hs = rows.map(r=>medir(r,false));
+    const total = hH + hs.reduce((a,b)=>a+b,0);
+    // si la tabla cabe en una hoja y no cabe en lo que queda, pasa completa a la siguiente
+    if(o.keep!==false && total <= BOT-TOP-18 && y+total > BOT) newPage();
+    const dibujarEnc = () => { need(hH+hs[0]||0); let x=M; doc.setFillColor.apply(doc,CLARO); doc.setDrawColor.apply(doc,BORDE); doc.setLineWidth(.2);
+      cols.forEach(cl => { doc.setFillColor.apply(doc,CLARO); doc.rect(x,y,cl.w,hH,'FD'); font(true,sz); doc.text(doc.splitTextToSize(String(cl.t),cl.w-3.2), x+1.6, y+padv+lh*0.8); x+=cl.w; }); y+=hH; };
+    dibujarEnc();
+    rows.forEach((r,ri) => {
+      if(y+hs[ri]>BOT){ newPage(); dibujarEnc(); }
+      let x=M; doc.setDrawColor.apply(doc,BORDE);
+      r.forEach((t,i) => { const cel=(t&&t.t!=null)?t:{t:t}; doc.rect(x,y,cols[i].w,hs[ri]); font(!!cel.b,sz,cel.c);
+        doc.text(doc.splitTextToSize(String(cel.t==null?'':cel.t), cols[i].w-3.2), x+1.6, y+padv+lh*0.8); x+=cols[i].w; });
+      y+=hs[ri];
+    });
+    y+=3.5;
+  }
+  function barras(items, o){
+    o=o||{}; if(!items.length) return; const rh=6.2, lw=82; const max=Math.max(...items.map(i=>i[1]),1);
+    need(items.length*rh+3); if(items.length*rh+3 < BOT-TOP && y+items.length*rh+3>BOT) newPage();
+    items.forEach(([n,v]) => { font(false,8.3); doc.text(doc.splitTextToSize(faltaCorta(n), lw-3)[0], M, y+4);
+      doc.setFillColor(238,242,236); doc.rect(M+lw,y+0.9,W-lw-14,3.8,'F');
+      doc.setFillColor.apply(doc,o.color||VERDE); doc.rect(M+lw,y+0.9,Math.max(0.6,(W-lw-14)*v/max),3.8,'F');
+      font(true,8.3); doc.text(String(v), M+W, y+4, {align:'right'}); y+=rh; });
+    y+=2;
+  }
+
+  /* ── Encabezado y datos generales ── */
+  cab(false);
+  fila('NOMBRE DEL REPORTE:', titulo+' · '+textoAlcance(c).toUpperCase());
+  fila('CIUDAD Y FECHA:', 'Barranquilla, '+fechaLarga(hoy));
+  fila('PERIODO:', 'Del '+fmtF(c.desde)+' al '+fmtF(c.hasta));
+  fila('LUGAR Y/O ENLACE:', 'Plataforma Seguimiento a la Formación · Centro Nacional Colombo Alemán');
+  const secciones = ['Estado de uso de la plataforma por los instructores.','Panorama general de los llamados de atención.'];
+  const dimTxt = {ficha:'Análisis por ficha.', aprendiz:'Análisis por aprendiz.', instructor:'Análisis por instructor.', tipo:'Análisis por tipo de llamado.', falta:'Análisis por tipo de falta.'};
+  secciones.push(dimTxt[c.f.dim]||dimTxt.ficha);
+  secciones.push('Aprendices que requieren atención prioritaria.');
+  if(c.repetidas.length) secciones.push('Faltas que se repiten en el grupo.');
+  secciones.push('Conclusiones y compromisos.');
+  fila('AGENDA O PUNTOS PARA DESARROLLAR:', secciones.map((s,i)=>(i+1)+'. '+s).join('\n'));
+  const obj = ['Identificar el estado de uso de la plataforma por parte de los instructores ('+textoAlcance(c)+').',
+    'Analizar los llamados de atención generados, según tipo, falta, ficha y aprendiz.',
+    'Detectar aprendices con reincidencia o riesgo de agotar las medidas formativas.',
+    'Proponer acciones de seguimiento y mejora para el siguiente periodo.'];
+  fila('OBJETIVO(S) DEL REPORTE:', obj.map(s=>'• '+s).join('\n'));
+  y += 3;
+  banda('DESARROLLO DEL REPORTE');
+
+  let n=0;
+  /* 1. Uso */
+  h2((++n)+'. Estado de uso de la plataforma');
+  par(parrafoUso(c));
+  if(c.f.alcance==='uno'){
+    const o=c.instr[0]; if(o && o.n){ tabla([{t:'Indicador',w:60},{t:'Valor',w:40}],[['Documentos generados',String(o.n)],['Llamados de atención',String(o.ll)],['Planes de mejoramiento',String(o.pl)],['Último documento', o.ult?fmtF(o.ult):'—']]); }
+  } else {
+    if(c.f.alcance!=='inactivos'){
+      if(c.selAct.length){ h3('Instructores activos'); par('En la plataforma los instructores que se encuentran activos son los siguientes:',{gap:1.5});
+        tabla([{t:'Instructor',w:60},{t:'Usuario',w:28},{t:'Llamados',w:18},{t:'Planes',w:16},{t:'Último documento',w:30}],
+          c.instr.filter(o=>o.u.estado==='activo').map(o=>[o.u.nombre,o.u.usuario,String(o.ll),String(o.pl),o.ult?fmtF(o.ult):'—'])); }
+      else par('No hay instructores activos en este momento.');
+    }
+    if(c.f.alcance!=='activos'){
+      if(c.selIna.length){ h3('Instructores que nunca han ingresado'); par('Los siguientes instructores no se encuentran activos: nunca han ingresado a la plataforma ni han cambiado la contraseña inicial.',{gap:1.5});
+        tabla([{t:'Instructor',w:70},{t:'Usuario',w:30},{t:'Estado',w:52}], c.selIna.map(u=>[u.nombre,u.usuario,'Contraseña inicial sin cambiar'])); }
+      else par('Todos los instructores del alcance ya ingresaron a la plataforma.');
+    }
+  }
+  /* 2. Panorama */
+  h2((++n)+'. Panorama general de los llamados de atención');
+  if(!c.docs.length) par('No se registraron documentos en el periodo para este alcance.');
+  else {
+    par('En el periodo se generaron '+plural(c.nLl,'llamado de atención','llamados de atención')+' ('+c.nDisc+' disciplinarios y '+c.nAcad+' académicos) y '+plural(c.nPl,'plan de mejoramiento','planes de mejoramiento')+'. Del total de llamados, '+c.nPrim+' son primeros y '+c.nSeg+' son segundos.'+(c.faltas.length?' La falta más frecuente es «'+faltaCorta(c.faltas[0][0])+'» ('+c.faltas[0][1]+' casos).':''));
+    h3('Faltas más frecuentes'); barras(c.faltas.slice(0,8));
+    if(c.f.alcance!=='uno' && c.instrConDocs.length>1){ h3('Instructores que más documentos generan'); barras(c.instrConDocs.slice(0,8).map(o=>[o.u.nombre,o.n]), {color:[31,95,139]}); }
+  }
+  /* 3. Dimensión */
+  const dim = c.f.dim;
+  h2((++n)+'. '+(dimTxt[dim]||dimTxt.ficha).replace(/\.$/,''));
+  if(!c.docs.length) par('Sin información para analizar en el periodo.');
+  else if(dim==='aprendiz'){
+    par('Se registran documentos para '+c.aprs.length+' aprendices. Se listan primero los de mayor gravedad.',{gap:1.5});
+    tabla([{t:'Aprendiz',w:52},{t:'Documento',w:28},{t:'Ficha',w:20},{t:'Docs',w:11},{t:'Falta principal',w:40},{t:'Situación',w:31}],
+      c.aprs.slice(0,60).map(a=>[a.nombre,a.doc,a.ficha,String(a.n),faltaCorta(a.falta),{t:a.sit,b:a.prior,c:a.prior?ROJO:TX}]));
+    if(c.aprs.length>60) par('Se muestran los 60 primeros; el listado completo está en el anexo.',{color:GRIS});
+  } else if(dim==='instructor'){
+    par('Participación de cada instructor en los documentos del periodo.',{gap:1.5});
+    tabla([{t:'Instructor',w:56},{t:'Docs',w:12},{t:'%',w:12},{t:'Llamados',w:18},{t:'Planes',w:16},{t:'Falta que más reporta',w:68}],
+      c.instrConDocs.map(o=>[o.u.nombre,String(o.n),pct(o.n,c.docs.length)+'',String(o.ll),String(o.pl),faltaCorta((topDe(o.faltas)[0]||['—'])[0])]));
+  } else if(dim==='tipo'){
+    const cnt=(tipo,num)=>c.llam.filter(h=>h.tipo_llamado===tipo&&(!num||h.numero_llamado===num)).length;
+    par('Distribución de los documentos según su tipo.',{gap:1.5});
+    tabla([{t:'Tipo de documento',w:70},{t:'Cantidad',w:24},{t:'% del total',w:24}],[
+      ['Llamado disciplinario · primero',String(cnt('disciplinario','primero')),pct(cnt('disciplinario','primero'),c.docs.length)+' %'],
+      ['Llamado disciplinario · segundo',String(cnt('disciplinario','segundo')),pct(cnt('disciplinario','segundo'),c.docs.length)+' %'],
+      ['Llamado académico · primero',String(cnt('academico','primero')),pct(cnt('academico','primero'),c.docs.length)+' %'],
+      ['Llamado académico · segundo',String(cnt('academico','segundo')),pct(cnt('academico','segundo'),c.docs.length)+' %'],
+      ['Plan de mejoramiento',String(c.nPl),pct(c.nPl,c.docs.length)+' %']]);
+  } else if(dim==='falta'){
+    par('Detalle de cada falta: cuántas veces se reporta, en cuántas fichas y por cuántos instructores.',{gap:1.5});
+    tabla([{t:'Falta',w:88},{t:'Casos',w:14},{t:'%',w:12},{t:'Fichas',w:16},{t:'Instructores',w:22}],
+      c.faltas.map(([k,v])=>{ const ds=c.docs.filter(h=>h._falta===k); return [faltaCorta(k),String(v),pct(v,c.docs.length)+'',String(new Set(ds.map(h=>h._ficha)).size),String(new Set(ds.map(h=>h.nombre_usuario)).size)]; }));
+  } else {
+    c.fichas.slice(0,12).forEach(o => {
+      need(34); h3('Ficha '+o.ficha+(o.programa?' · '+faltaCorta(o.programa):''));
+      par(parrafoFicha(o,c));
+      const lista2 = o.aprs.filter(a=>a.n>=1).slice(0,8);
+      if(lista2.length) tabla([{t:'Aprendiz',w:52},{t:'Documento',w:28},{t:'Docs',w:11},{t:'Falta principal',w:55},{t:'Situación',w:34}],
+        lista2.map(a=>[a.nombre,a.doc,String(a.n),faltaCorta(a.falta),{t:a.sit,b:a.prior,c:a.prior?ROJO:TX}]));
+    });
+    if(c.fichas.length>12) par('Se detallan las 12 fichas con más documentos; el resto está en el anexo.',{color:GRIS});
+  }
+  /* 4. Prioritarios */
+  h2((++n)+'. Aprendices que requieren atención prioritaria');
+  if(!c.prior.length) par('En el periodo no se identifican aprendices con dos o más documentos, segundo llamado o plan de mejoramiento.');
+  else {
+    par('Se identifican '+plural(c.prior.length,'aprendiz','aprendices')+' con dos o más documentos, segundo llamado o plan de mejoramiento. Un nuevo incumplimiento podría llevar a agotar las medidas formativas según el Reglamento del Aprendiz.',{gap:1.5});
+    tabla([{t:'Aprendiz',w:52},{t:'Documento',w:28},{t:'Ficha',w:20},{t:'Docs',w:11},{t:'Falta principal',w:40},{t:'Situación',w:31}],
+      c.prior.slice(0,40).map(a=>[a.nombre,a.doc,a.ficha,String(a.n),faltaCorta(a.falta),{t:a.sit,b:true,c:ROJO}]));
+  }
+  /* 5. Repetidas */
+  if(c.repetidas.length){
+    h2((++n)+'. Faltas que se repiten en el grupo');
+    par('Las siguientes faltas aparecen en los documentos de la mayoría de los instructores, lo que indica un patrón general y no casos aislados:',{gap:1.5});
+    tabla([{t:'Falta',w:100},{t:'Instructores que la reportan',w:52}], c.repetidas.map(r=>[faltaCorta(r.falta), r.n+' de '+r.de]));
+  }
+
+  /* Conclusiones, compromisos, firmas */
+  need(40); y+=3; banda('CONCLUSIONES');
+  y+=2.5; conclusiones(c).forEach(t=>par(t,{gap:1.5}));
+  y+=2; need(60); banda('ESTABLECIMIENTO Y ACEPTACIÓN DE COMPROMISOS'); y+=1.5;
+  tabla([{t:'ACTIVIDAD / DECISIÓN',w:70},{t:'FECHA',w:20},{t:'RESPONSABLE',w:34},{t:'FIRMA O PARTICIPACIÓN VIRTUAL',w:38}], compromisos(c).map(r=>[r[0],r[1],r[2],'']));
+  need(55); banda('ASISTENTES Y APROBACIÓN DE DECISIONES'); y+=1.5;
+  tabla([{t:'NOMBRE',w:42},{t:'DEPENDENCIA / EMPRESA',w:36},{t:'APRUEBA (SI/NO)',w:20},{t:'OBSERVACIÓN',w:36},{t:'FIRMA O PARTICIPACIÓN VIRTUAL',w:38}], [['','','','',''],['','','','','']].map(r=>r.map(x=>x)), {size:9});
+  par('De acuerdo con la Ley 1581 de 2012, Protección de Datos Personales, el Servicio Nacional de Aprendizaje SENA se compromete a garantizar la seguridad y protección de los datos personales que se encuentran almacenados en este documento, y les dará el tratamiento correspondiente en cumplimiento de lo establecido legalmente.',{size:7.5,color:GRIS});
+
+  /* Anexo */
+  if(c.docs.length){
+    newPage(); banda('ANEXO 1. REGISTRO DE DOCUMENTOS DEL PERIODO'); y+=2;
+    tabla([{t:'Fecha',w:19},{t:'Documento',w:30},{t:'Aprendiz',w:42},{t:'Ficha',w:17},{t:'Falta',w:42},{t:'Instructor',w:32}],
+      c.docs.slice(0,500).map(h=>[fmtF(h._d), h.tipo_documento==='plan'?'Plan de mejoramiento':('Llamado '+(h.tipo_llamado||'')+' · '+(h.numero_llamado||'')), h.nombre_aprendiz||'', h._ficha, faltaCorta(h._falta), h.nombre_usuario||'']), {size:7.5, keep:false});
+    if(c.docs.length>500) par('Se muestran los primeros 500 registros.',{color:GRIS});
+  }
+  const total = doc.getNumberOfPages();
+  for(let p=1;p<=total;p++){ doc.setPage(p); font(false,7.5,GRIS); doc.text('GOR-F-084 · adaptado para reporte estadístico', M, 290); doc.text('Página '+p+' de '+total, M+W, 290, {align:'right'}); }
+  return doc;
+}
+
+/* ───────── Pantalla ───────── */
+function barraHTML(items, color){
+  if(!items.length) return '<div style="color:#888;font-size:12px;">Sin datos en el periodo</div>';
+  const max=Math.max(...items.map(i=>i[1]),1);
+  return items.map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;"><div style="width:42%;min-width:90px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(n)}">${esc(faltaCorta(n))}</div><div style="flex:1;background:#eef1f6;border-radius:4px;height:14px;"><div style="width:${Math.max(3,v*100/max)}%;height:14px;border-radius:4px;background:${color||'#1565c0'};"></div></div><b style="width:28px;text-align:right;color:#1a1a1a;">${v}</b></div>`).join('');
+}
+function tileHTML(t,v,col){ return `<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:12px;"><div style="font-size:11px;color:#666;margin-bottom:3px;">${t}</div><div style="font-size:26px;font-weight:700;color:${col};">${v}</div></div>`; }
+function pintar(){
+  const root=document.getElementById('estat-root'); if(!root) return;
+  if(!E.listo){ root.innerHTML='<div style="padding:24px;text-align:center;color:#666;">Cargando datos…</div>'; return; }
+  const f=E.f; if(!f.hasta) f.hasta=hoyISO();
+  const c=calc(f);
+  const instOpts = c.todos.slice().sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')).map(u=>`<option value="${u.id}" ${String(f.uid)===String(u.id)?'selected':''}>${esc(u.nombre)}${u.estado==='inactivo'?' (sin ingreso)':''}</option>`).join('');
+  const sel='width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;background:#fff;';
+  const lab='font-size:11px;color:#555;display:block;margin-bottom:3px;';
+  let dimItems=[], dimTit='';
+  if(f.dim==='ficha'){ dimTit='Documentos por ficha'; dimItems=c.fichas.slice(0,10).map(o=>['Ficha '+o.ficha,o.n]); }
+  else if(f.dim==='aprendiz'){ dimTit='Aprendices con más documentos'; dimItems=c.aprs.slice(0,10).map(a=>[a.nombre,a.n]); }
+  else if(f.dim==='instructor'){ dimTit='Documentos por instructor'; dimItems=c.instrConDocs.slice(0,10).map(o=>[o.u.nombre,o.n]); }
+  else if(f.dim==='tipo'){ dimTit='Documentos por tipo'; dimItems=[['Llamado disciplinario',c.nDisc],['Llamado académico',c.nAcad],['Plan de mejoramiento',c.nPl]]; }
+  else { dimTit='Faltas más frecuentes'; dimItems=c.faltas.slice(0,10); }
+  root.innerHTML = `
+  <div style="background:#e3f2fd;border-radius:10px;padding:10px 14px;font-size:12px;color:#0d47a1;margin-bottom:12px;">Las estadísticas cuentan solo desde el <b>28/10/2026</b>. Lo anterior era etapa de desarrollo y no se incluye.</div>
+  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
+    <div><label style="${lab}">Alcance</label><select style="${sel}" onchange="estatSet('alcance',this.value)">
+      <option value="todos" ${f.alcance==='todos'?'selected':''}>Todos los instructores</option>
+      <option value="activos" ${f.alcance==='activos'?'selected':''}>Solo activos</option>
+      <option value="inactivos" ${f.alcance==='inactivos'?'selected':''}>Solo sin ingreso</option>
+      <option value="uno" ${f.alcance==='uno'?'selected':''}>Un instructor</option></select></div>
+    ${f.alcance==='uno'?`<div><label style="${lab}">Instructor</label><select style="${sel}" onchange="estatSet('uid',this.value)"><option value="">Selecciona…</option>${instOpts}</select></div>`:''}
+    <div><label style="${lab}">Analizar por</label><select style="${sel}" onchange="estatSet('dim',this.value)">
+      <option value="ficha" ${f.dim==='ficha'?'selected':''}>Ficha</option>
+      <option value="aprendiz" ${f.dim==='aprendiz'?'selected':''}>Aprendiz</option>
+      <option value="instructor" ${f.dim==='instructor'?'selected':''}>Instructor</option>
+      <option value="tipo" ${f.dim==='tipo'?'selected':''}>Tipo de llamado</option>
+      <option value="falta" ${f.dim==='falta'?'selected':''}>Tipo de falta</option></select></div>
+    <div><label style="${lab}">Desde</label><input type="date" min="${CORTE_DIA}" value="${f.desde}" style="${sel}" onchange="estatSet('desde',this.value)"></div>
+    <div><label style="${lab}">Hasta</label><input type="date" min="${CORTE_DIA}" value="${f.hasta}" style="${sel}" onchange="estatSet('hasta',this.value)"></div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px;">
+    ${tileHTML('Instructores registrados',c.todos.length,'#1565c0')}
+    ${tileHTML('Activos',c.nAct,'#2e7d32')}
+    ${tileHTML('Sin ingreso',c.nIna,'#c62828')}
+    ${tileHTML('Documentos',c.docs.length,'#1a1a1a')}
+    ${tileHTML('Llamados',c.nLl,'#1565c0')}
+    ${tileHTML('Planes',c.nPl,'#e65100')}
+  </div>
+  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:10px;">${dimTit}</div>${barraHTML(dimItems)}</div>
+  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:10px;">Faltas más frecuentes</div>${barraHTML(c.faltas.slice(0,8),'#2e7d32')}</div>
+  <details style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:12px 14px;margin-bottom:10px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;">Instructores activos (${c.selAct.length})</summary><div style="font-size:12px;margin-top:8px;line-height:1.7;">${c.selAct.map(u=>esc(u.nombre)).join('<br>')||'—'}</div></details>
+  <details style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:12px 14px;margin-bottom:14px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;">Instructores sin ingreso (${c.selIna.length})</summary><div style="font-size:12px;margin-top:8px;line-height:1.7;">${c.selIna.map(u=>esc(u.nombre)+' <span style="color:#888">· '+esc(u.usuario)+'</span>').join('<br>')||'—'}</div></details>
+  <button onclick="estatPDF()" ${f.alcance==='uno'&&!f.uid?'disabled':''} style="width:100%;padding:13px;background:#1565c0;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;${f.alcance==='uno'&&!f.uid?'opacity:.5;':''}">Descargar reporte PDF</button>
+  <div style="font-size:11px;color:#777;margin-top:8px;text-align:center;">“Activo” = instructor que ya cambió su contraseña inicial.</div>`;
+}
+window.estatIniciar = async function(){
+  E.f.hasta = hoyISO(); pintar();
+  try{ await cargarDatos(); }catch(e){ const r=document.getElementById('estat-root'); if(r) r.innerHTML='<div style="padding:24px;color:#c62828;">No se pudieron cargar los datos. Revisa tu conexión e inténtalo de nuevo.</div>'; return; }
+  pintar();
+};
+window.estatSet = function(k,v){
+  if((k==='desde'||k==='hasta') && v && v<CORTE_DIA) v=CORTE_DIA;
+  E.f[k]=v; pintar();
+};
+window.estatPDF = function(){
+  try{
+    const c=calc(E.f); const d=generarPDF(c);
+    d.save('Reporte_estadistico_'+E.f.alcance+'_'+hoyISO().replace(/-/g,'')+'.pdf');
+  }catch(e){ console.error(e); alert('No se pudo generar el PDF: '+e.message); }
+};
+window.__EST = {E, calc, generarPDF, conclusiones, compromisos};
+})();
+
+</script>
 </body>
 </html>
