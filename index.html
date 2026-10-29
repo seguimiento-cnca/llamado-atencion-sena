@@ -7491,8 +7491,8 @@ function generarPDF(c){
     y += hh;
   }
   function banda(t){ need(7+22); doc.setFillColor.apply(doc,VERDE); doc.setDrawColor.apply(doc,BORDE); doc.rect(M,y,W,7,'FD'); font(true,10,[255,255,255]); doc.text(t, M+W/2, y+4.8, {align:'center'}); y+=7; }
-  function h2(t){ need(16); y+=3; font(true,10.5,VERDE); doc.text(t, M, y+3.5); y+=7; }
-  function h3(t){ need(14); font(true,9.5); doc.text(t, M, y+3); y+=5.6; }
+  function h2(t){ need(42); y+=3; font(true,10.5,VERDE); doc.text(t, M, y+3.5); y+=7; }
+  function h3(t){ need(40); font(true,9.5); doc.text(t, M, y+3); y+=5.6; }
   function par(t, o){ o=o||{}; const s=o.size||9.5; font(!!o.bold,s,o.color); const lines=doc.splitTextToSize(String(t), W-(o.indent||0)); const lh=LH(s);
     lines.forEach(l => { need(lh+0.5); font(!!o.bold,s,o.color); doc.text(l, M+(o.indent||0), y+lh*0.8); y+=lh; }); y+=(o.gap==null?2:o.gap); }
   function lista(items){ items.forEach(t => par('•  '+t, {indent:3, gap:1})); y+=1.5; }
@@ -7503,13 +7503,16 @@ function generarPDF(c){
     const hH = medir(cols.map(x=>x.t), true);
     const hs = rows.map(r=>medir(r,false));
     const total = hH + hs.reduce((a,b)=>a+b,0);
-    // si la tabla cabe en una hoja y no cabe en lo que queda, pasa completa a la siguiente
-    if(o.keep!==false && total <= BOT-TOP-18 && y+total > BOT) newPage();
+    // Las tablas pequeñas pasan completas a la hoja siguiente; las largas se parten en dos tablas limpias:
+    // la primera termina en una fila completa con ~2,5 cm libres al pie y la segunda repite los títulos.
+    const TBOT = BOT-10;
+    if(o.keep!==false && total <= 55 && y+total > TBOT) newPage();
+    else if(y + hH + (hs[0]||0) + (hs[1]||0) > TBOT) newPage();
     const dibujarEnc = () => { need(hH+hs[0]||0); let x=M; doc.setFillColor.apply(doc,CLARO); doc.setDrawColor.apply(doc,BORDE); doc.setLineWidth(.2);
       cols.forEach(cl => { doc.setFillColor.apply(doc,CLARO); doc.rect(x,y,cl.w,hH,'FD'); font(true,sz); doc.text(doc.splitTextToSize(String(cl.t),cl.w-3.2), x+1.6, y+padv+lh*0.8); x+=cl.w; }); y+=hH; };
     dibujarEnc();
     rows.forEach((r,ri) => {
-      if(y+hs[ri]>BOT){ newPage(); dibujarEnc(); }
+      if(y+hs[ri]>TBOT){ newPage(); y+=2; dibujarEnc(); }
       let x=M; doc.setDrawColor.apply(doc,BORDE);
       r.forEach((t,i) => { const cel=(t&&t.t!=null)?t:{t:t}; doc.rect(x,y,cols[i].w,hs[ri]); font(!!cel.b,sz,cel.c);
         doc.text(doc.splitTextToSize(String(cel.t==null?'':cel.t), cols[i].w-3.2), x+1.6, y+padv+lh*0.8); x+=cols[i].w; });
@@ -7681,7 +7684,18 @@ function pintar(){
   else if(f.dim==='instructor'){ dimTit='Documentos por instructor'; dimItems=c.instrConDocs.slice(0,10).map(o=>[o.u.nombre,o.n]); }
   else if(f.dim==='tipo'){ dimTit='Documentos por tipo'; dimItems=[['Llamado disciplinario',c.nDisc],['Llamado académico',c.nAcad],['Plan de mejoramiento',c.nPl]]; }
   else { dimTit='Faltas más frecuentes'; dimItems=c.faltas.slice(0,10); }
+  const sinPDF = f.alcance==='uno' && !f.uid;
+  const resumenTxt = (c.docs.length===0
+    ? 'Todavía no se han generado llamados de atención ni planes de mejoramiento.'
+    : 'Se han generado '+c.nLl+' llamado(s) de atención y '+c.nPl+' plan(es) de mejoramiento.')
+    + (c.nIna>0 ? ' Faltan '+c.nIna+' instructor(es) por ingresar a la plataforma.' : ' Todos los instructores registrados ya ingresaron.');
   root.innerHTML = `
+  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;">
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px;">Situación actual de la plataforma</div>
+    <div style="font-size:13px;color:#333;line-height:1.5;margin-bottom:12px;">${resumenTxt}</div>
+    <button onclick="estatPDF()" ${sinPDF?'disabled':''} style="width:100%;padding:13px;background:#1565c0;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;${sinPDF?'opacity:.5;':''}">Generar reporte (PDF)</button>
+    ${sinPDF?'<div style="font-size:11px;color:#c62828;margin-top:6px;text-align:center;">Elige un instructor para generar su reporte.</div>':'<div style="font-size:11px;color:#777;margin-top:6px;text-align:center;">El reporte se genera aunque todavía no haya llamados ni planes.</div>'}
+  </div>
   <div style="background:#e3f2fd;border-radius:10px;padding:10px 14px;font-size:12px;color:#0d47a1;margin-bottom:12px;">Las estadísticas cuentan solo desde el <b>28/10/2026</b>. Lo anterior era etapa de desarrollo y no se incluye.</div>
   <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
     <div><label style="${lab}">Alcance</label><select style="${sel}" onchange="estatSet('alcance',this.value)">
@@ -7713,7 +7727,6 @@ function pintar(){
   <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:10px;">Faltas más frecuentes</div>${barraHTML(c.faltas.slice(0,8),'#2e7d32')}</div>
   <details style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:12px 14px;margin-bottom:10px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;">Instructores activos (${c.selAct.length})</summary><div style="font-size:12px;margin-top:8px;line-height:1.7;">${c.selAct.map(u=>esc(u.nombre)).join('<br>')||'—'}</div></details>
   <details style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:12px 14px;margin-bottom:14px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;">Instructores sin ingreso (${c.selIna.length})</summary><div style="font-size:12px;margin-top:8px;line-height:1.7;">${c.selIna.map(u=>esc(u.nombre)+' <span style="color:#888">· '+esc(u.usuario)+'</span>').join('<br>')||'—'}</div></details>
-  <button onclick="estatPDF()" ${f.alcance==='uno'&&!f.uid?'disabled':''} style="width:100%;padding:13px;background:#1565c0;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;${f.alcance==='uno'&&!f.uid?'opacity:.5;':''}">Descargar reporte PDF</button>
   <div style="font-size:11px;color:#777;margin-top:8px;text-align:center;">“Activo” = instructor que ya cambió su contraseña inicial.</div>`;
 }
 window.estatIniciar = async function(){
