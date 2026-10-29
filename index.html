@@ -7542,7 +7542,7 @@ function generarPDF(c){
   secciones.push(dimTxt[c.f.dim]||dimTxt.ficha);
   secciones.push('Aprendices que requieren atención prioritaria.');
   if(c.repetidas.length) secciones.push('Faltas que se repiten en el grupo.');
-  secciones.push('Conclusiones y compromisos.');
+  secciones.push('Conclusiones.');
   fila('AGENDA O PUNTOS PARA DESARROLLAR:', secciones.map((s,i)=>(i+1)+'. '+s).join('\n'));
   const obj = ['Identificar el estado de uso de la plataforma por parte de los instructores ('+textoAlcance(c)+').',
     'Analizar los llamados de atención generados, según tipo, falta, ficha y aprendiz.',
@@ -7645,10 +7645,6 @@ function generarPDF(c){
   /* Conclusiones, compromisos, firmas */
   need(40); y+=3; banda('CONCLUSIONES');
   y+=2.5; conclusiones(c).forEach(t=>par(t,{gap:1.5}));
-  y+=2; need(60); banda('ESTABLECIMIENTO Y ACEPTACIÓN DE COMPROMISOS'); y+=1.5;
-  tabla([{t:'ACTIVIDAD / DECISIÓN',w:70},{t:'FECHA',w:20},{t:'RESPONSABLE',w:34},{t:'FIRMA O PARTICIPACIÓN VIRTUAL',w:38}], compromisos(c).map(r=>[r[0],r[1],r[2],'']));
-  need(55); banda('ASISTENTES Y APROBACIÓN DE DECISIONES'); y+=1.5;
-  tabla([{t:'NOMBRE',w:42},{t:'DEPENDENCIA / EMPRESA',w:36},{t:'APRUEBA (SI/NO)',w:20},{t:'OBSERVACIÓN',w:36},{t:'FIRMA O PARTICIPACIÓN VIRTUAL',w:38}], [['','','','',''],['','','','','']].map(r=>r.map(x=>x)), {size:9});
   par('De acuerdo con la Ley 1581 de 2012, Protección de Datos Personales, el Servicio Nacional de Aprendizaje SENA se compromete a garantizar la seguridad y protección de los datos personales que se encuentran almacenados en este documento, y les dará el tratamiento correspondiente en cumplimiento de lo establecido legalmente.',{size:7.5,color:GRIS});
 
   /* Anexo */
