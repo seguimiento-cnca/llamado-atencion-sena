@@ -7260,13 +7260,17 @@ window.EST_CORTE = CORTE_ISO;
 const INV = !!window.EST_INVENTARIO; // v2: hay fichas y aprendices cargados por los líderes; v1 es solo generador de documentos
 const ESTADO_TXT = {'EN FORMACION':'En formación','RETIRO VOLUNTARIO':'Retiro voluntario','CANCELADO':'Cancelación de matrícula','APLAZADO':'Aplazado','TRASLADADO':'Trasladado','CONDICIONADO':'Condicionado','EN PLAN DE MEJORAMIENTO':'En plan de mejoramiento'};
 const estTxt = e => ESTADO_TXT[e] || String(e||'En formación');
-const E = {usr:[], doc:[], inv:{fichas:[], apr:[]}, listo:false, f:{alcance:'todos', uid:'', dim:'ficha', desde:CORTE_DIA, hasta:''}};
+const E = {usr:[], doc:[], inv:{fichas:[], apr:[]}, listo:false, f:{alcance:'todos', uid:'', dim:'auto', periodo:'todo', programa:'', ficha:'', aprendiz:'', falta:'', desde:CORTE_DIA, hasta:''}};
+const TIPO_INF = {general:'Informe general', programa:'Informe por programa de formación', ficha:'Informe por ficha', instructor:'Informe por instructor', aprendiz:'Informe por aprendiz', falta:'Informe por tipo de falta'};
+const keyProg = p => norm(p) || '__sin__';
+const keyApr = h => (h.documento_aprendiz||'')+'|'+norm(h.nombre_aprendiz);
 
 const esc = t => String(t==null?'':t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const norm = t => String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const pad = n => String(n).padStart(2,'0');
 const fmtF = d => pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear();
-const hoyISO = () => { const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+const isoDe = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const hoyISO = () => isoDe(new Date());
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const fechaLarga = d => d.getDate()+' de '+MESES[d.getMonth()]+' de '+d.getFullYear();
 const pct = (a,b) => b ? Math.round(a*100/b) : 0;
@@ -7278,7 +7282,7 @@ function faltaLabel(k){
   try{ if(typeof FALTAS_ACAD!=='undefined' && FALTAS_ACAD[k]) return FALTAS_ACAD[k].label; }catch(e){}
   return String(k);
 }
-function faltaCorta(t){ t=String(t); return t.length>70 ? t.slice(0,67)+'…' : t; }
+function faltaCorta(t){ return String(t); } // nombres completos: ya no se recortan
 
 async function pedirTodo(ruta){
   let out=[], off=0;
@@ -7303,6 +7307,28 @@ async function cargarDatos(){
   E.listo = true;
 }
 
+/* ───────── Opciones de filtros (encadenadas) ───────── */
+function opciones(base, f){
+  const progs = new Map();
+  base.forEach(h => { if(!progs.has(h._prog)) progs.set(h._prog, h.programa ? String(h.programa).trim() : 'Sin programa'); });
+  if(f.programa && !progs.has(f.programa)) f.programa = '';
+  const b1 = f.programa ? base.filter(h=>h._prog===f.programa) : base;
+  const fichas = Array.from(new Set(b1.map(h=>h._ficha))).sort((a,b)=>a.localeCompare(b,'es'));
+  if(f.ficha && fichas.indexOf(f.ficha)<0) f.ficha = '';
+  const b2 = f.ficha ? b1.filter(h=>h._ficha===f.ficha) : b1;
+  const aprs = new Map();
+  b2.forEach(h => { if(!aprs.has(h._apk)) aprs.set(h._apk, (h.nombre_aprendiz||'(sin nombre)')+(h.documento_aprendiz?' · '+h.documento_aprendiz:'')); });
+  if(f.aprendiz && !aprs.has(f.aprendiz)) f.aprendiz = '';
+  const b3 = f.aprendiz ? b2.filter(h=>h._apk===f.aprendiz) : b2;
+  const faltas = Array.from(new Set(b3.map(h=>h._falta))).sort((a,b)=>a.localeCompare(b,'es'));
+  if(f.falta && faltas.indexOf(f.falta)<0) f.falta = '';
+  return {
+    progs: Array.from(progs).sort((a,b)=>a[1].localeCompare(b[1],'es')),
+    fichas, faltas,
+    aprs: Array.from(aprs).sort((a,b)=>a[1].localeCompare(b[1],'es'))
+  };
+}
+
 /* ───────── Cálculo ───────── */
 function topDe(mapa){ return Object.entries(mapa).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'es')); }
 function calc(f){
@@ -7315,16 +7341,33 @@ function calc(f){
   else if(f.alcance==='inactivos') sel = todos.filter(u=>u.estado==='inactivo');
   else if(f.alcance==='uno') sel = todos.filter(u=>String(u.id)===String(f.uid));
   const ids = new Set(sel.map(u=>String(u.id))), nombres = new Set(sel.map(u=>u.nombre));
-  const docs = [];
+  const base = [];
   E.doc.forEach(h => {
     const d = new Date(h.created_at || h.fecha_generacion);
     if(isNaN(d) || d<CORTE || d<desde || d>hasta) return;
     if(!(ids.has(String(h.usuario_id)) || nombres.has(h.nombre_usuario))) return;
-    docs.push(Object.assign({}, h, {_d:d, _falta: faltaLabel(h.falta), _ficha: String(h.ficha||'').trim() || 'Sin ficha'}));
+    base.push(Object.assign({}, h, {_d:d, _falta: faltaLabel(h.falta), _ficha: String(h.ficha||'').trim() || 'Sin ficha', _prog: keyProg(h.programa), _apk: keyApr(h)}));
   });
-  docs.sort((a,b)=>a._d-b._d);
+  base.sort((a,b)=>a._d-b._d);
+  const opt = opciones(base, f);
+  const docs = base.filter(h => (!f.programa||h._prog===f.programa) && (!f.ficha||h._ficha===f.ficha) && (!f.aprendiz||h._apk===f.aprendiz) && (!f.falta||h._falta===f.falta));
   const esPlan = h => h.tipo_documento==='plan';
-  const c = {f, desde, hasta, todos, sel, docs, hoy};
+  const c = {f, desde, hasta, todos, sel, docs, hoy, opt};
+  c.filtroContenido = !!(f.programa||f.ficha||f.aprendiz||f.falta);
+  c.enfoque = f.aprendiz?'aprendiz' : f.ficha?'ficha' : f.programa?'programa' : f.falta?'falta' : f.alcance==='uno'?'instructor' : 'general';
+  c.dim = (f.dim && f.dim!=='auto') ? f.dim : ({aprendiz:'historial', ficha:'aprendiz'}[c.enfoque] || 'ficha');
+  if(c.enfoque==='aprendiz') c.dim = 'historial';
+  const lbl = (arr,k) => { const x = arr.find(a=>a[0]===k); return x?x[1]:k; };
+  c.filtrosTxt = [];
+  c.filtrosVal = [];
+  if(f.programa){ c.filtrosTxt.push('Programa de formación: '+lbl(opt.progs,f.programa)); c.filtrosVal.push(lbl(opt.progs,f.programa)); }
+  if(f.ficha){ c.filtrosTxt.push('Ficha: '+f.ficha); c.filtrosVal.push('Ficha '+f.ficha); }
+  if(f.alcance==='uno' && sel[0]){ c.filtrosTxt.push('Instructor: '+sel[0].nombre); c.filtrosVal.push(sel[0].nombre); }
+  else if(f.alcance==='activos'){ c.filtrosTxt.push('Instructores activos'); c.filtrosVal.push('instructores activos'); }
+  else if(f.alcance==='inactivos'){ c.filtrosTxt.push('Instructores sin ingreso'); c.filtrosVal.push('instructores sin ingreso'); }
+  if(f.aprendiz){ c.filtrosTxt.push('Aprendiz: '+lbl(opt.aprs,f.aprendiz)); c.filtrosVal.push(lbl(opt.aprs,f.aprendiz)); }
+  if(f.falta){ c.filtrosTxt.push('Falta: '+f.falta); c.filtrosVal.push(f.falta); }
+  c.etiqueta = TIPO_INF[c.enfoque]+(c.filtrosVal.length?' — '+c.filtrosVal.join(' · '):'')+' · del '+fmtF(desde)+' al '+fmtF(hasta);
   c.nAct = todos.filter(u=>u.estado==='activo').length;
   c.nIna = todos.length - c.nAct;
   c.selAct = sel.filter(u=>u.estado==='activo'); c.selIna = sel.filter(u=>u.estado==='inactivo');
@@ -7403,6 +7446,7 @@ function textoAlcance(c){
 }
 function conclusiones(c){
   const t=[];
+  if(c.filtrosTxt.length) t.push('Este informe se limita a: '+c.filtrosTxt.join('; ')+'.');
   if(!c.docs.length){
     t.push('En el periodo analizado no se registraron documentos para el alcance seleccionado. Las cifras de uso de la plataforma se presentan como línea base.');
   } else {
@@ -7419,7 +7463,7 @@ function conclusiones(c){
     const w = c.inv.fichas.slice().sort((a,b)=>b.des-a.des)[0];
     if(w && w.des>=2) t.push('La ficha '+w.ficha+' presenta la mayor deserción: '+plural(w.des,'aprendiz','aprendices')+' ('+w.pdes+' % de sus aprendices registrados).');
   }
-  if(c.f.alcance==='todos' && c.nIna>0){
+  if(c.f.alcance==='todos' && !c.filtroContenido && c.nIna>0){
     const p = pct(c.nIna,c.todos.length);
     t.push(p+' % de los instructores ('+c.nIna+' de '+c.todos.length+') aún no ha ingresado a la plataforma ni ha cambiado la contraseña inicial'+(p>=30?', lo que significa que parte de los llamados puede estar quedando sin registro.':'.'));
   }
@@ -7492,7 +7536,7 @@ function generarPDF(c){
   }
   function banda(t){ need(7+22); doc.setFillColor.apply(doc,VERDE); doc.setDrawColor.apply(doc,BORDE); doc.rect(M,y,W,7,'FD'); font(true,10,[255,255,255]); doc.text(t, M+W/2, y+4.8, {align:'center'}); y+=7; }
   function h2(t){ need(42); y+=3; font(true,10.5,VERDE); doc.text(t, M, y+3.5); y+=7; }
-  function h3(t){ need(40); font(true,9.5); doc.text(t, M, y+3); y+=5.6; }
+  function h3(t){ need(40); font(true,9.5); const ls=doc.splitTextToSize(String(t), W); ls.forEach((l,i)=>{ doc.text(l, M, y+3+i*4.4); }); y+=5.6+(ls.length-1)*4.4; }
   function par(t, o){ o=o||{}; const s=o.size||9.5; font(!!o.bold,s,o.color); const lines=doc.splitTextToSize(String(t), W-(o.indent||0)); const lh=LH(s);
     lines.forEach(l => { need(lh+0.5); font(!!o.bold,s,o.color); doc.text(l, M+(o.indent||0), y+lh*0.8); y+=lh; }); y+=(o.gap==null?2:o.gap); }
   function lista(items){ items.forEach(t => par('•  '+t, {indent:3, gap:1})); y+=1.5; }
@@ -7523,28 +7567,34 @@ function generarPDF(c){
   function barras(items, o){
     o=o||{}; if(!items.length) return; const rh=6.2, lw=82; const max=Math.max(...items.map(i=>i[1]),1);
     need(items.length*rh+3); if(items.length*rh+3 < BOT-TOP && y+items.length*rh+3>BOT) newPage();
-    items.forEach(([n,v]) => { font(false,8.3); doc.text(doc.splitTextToSize(faltaCorta(n), lw-3)[0], M, y+4);
-      doc.setFillColor(238,242,236); doc.rect(M+lw,y+0.9,W-lw-14,3.8,'F');
-      doc.setFillColor.apply(doc,o.color||VERDE); doc.rect(M+lw,y+0.9,Math.max(0.6,(W-lw-14)*v/max),3.8,'F');
-      font(true,8.3); doc.text(String(v), M+W, y+4, {align:'right'}); y+=rh; });
+    items.forEach(([n,v]) => { font(false,8.3); const ls=doc.splitTextToSize(String(n), lw-3); const hh=Math.max(rh, ls.length*3.9+2.3); need(hh);
+      doc.text(ls, M, y+4);
+      const by=y+(hh-3.8)/2;
+      doc.setFillColor(238,242,236); doc.rect(M+lw,by,W-lw-14,3.8,'F');
+      doc.setFillColor.apply(doc,o.color||VERDE); doc.rect(M+lw,by,Math.max(0.6,(W-lw-14)*v/max),3.8,'F');
+      font(true,8.3); doc.text(String(v), M+W, by+3.1, {align:'right'}); y+=hh; });
     y+=2;
   }
 
   /* ── Encabezado y datos generales ── */
   cab(false);
-  fila('NOMBRE DEL REPORTE:', titulo+' · '+textoAlcance(c).toUpperCase());
+  fila('NOMBRE DEL REPORTE:', titulo);
+  fila('TIPO DE INFORME:', TIPO_INF[c.enfoque].toUpperCase());
+  if(c.filtrosTxt.length) fila('FILTROS APLICADOS:', c.filtrosTxt.join('\n'));
   fila('CIUDAD Y FECHA:', 'Barranquilla, '+fechaLarga(hoy));
   fila('PERIODO:', 'Del '+fmtF(c.desde)+' al '+fmtF(c.hasta));
   fila('LUGAR Y/O ENLACE:', 'Plataforma Seguimiento a la Formación · Centro Nacional Colombo Alemán');
-  const secciones = ['Estado de uso de la plataforma por los instructores.','Panorama general de los llamados de atención.'];
-  const dimTxt = {ficha:'Análisis por ficha.', aprendiz:'Análisis por aprendiz.', instructor:'Análisis por instructor.', tipo:'Análisis por tipo de llamado.', falta:'Análisis por tipo de falta.'};
+  const secciones = [];
+  if(!c.filtroContenido) secciones.push('Estado de uso de la plataforma por los instructores.');
+  secciones.push('Panorama general de los llamados de atención.');
+  const dimTxt = {historial:'Historial del aprendiz.', ficha:'Análisis por ficha.', aprendiz:'Análisis por aprendiz.', instructor:'Análisis por instructor.', tipo:'Análisis por tipo de llamado.', falta:'Análisis por tipo de falta.'};
   if(c.inv && c.inv.total) secciones.push('Estado de los aprendices por ficha (en formación, retiro voluntario, cancelación).');
-  secciones.push(dimTxt[c.f.dim]||dimTxt.ficha);
+  secciones.push(dimTxt[c.dim]||dimTxt.ficha);
   secciones.push('Aprendices que requieren atención prioritaria.');
   if(c.repetidas.length) secciones.push('Faltas que se repiten en el grupo.');
   secciones.push('Conclusiones.');
   fila('AGENDA O PUNTOS PARA DESARROLLAR:', secciones.map((s,i)=>(i+1)+'. '+s).join('\n'));
-  const obj = ['Identificar el estado de uso de la plataforma por parte de los instructores ('+textoAlcance(c)+').',
+  const obj = [c.filtroContenido ? 'Analizar los llamados de atención y planes de mejoramiento según los filtros aplicados ('+c.filtrosTxt.join('; ')+').' : 'Identificar el estado de uso de la plataforma por parte de los instructores ('+textoAlcance(c)+').',
     'Analizar los llamados de atención generados, según tipo, falta, ficha y aprendiz.',
     'Detectar aprendices con reincidencia o riesgo de agotar las medidas formativas.',
     'Proponer acciones de seguimiento y mejora para el siguiente periodo.'];
@@ -7554,6 +7604,7 @@ function generarPDF(c){
 
   let n=0;
   /* 1. Uso */
+  if(!c.filtroContenido){
   h2((++n)+'. Estado de uso de la plataforma');
   par(parrafoUso(c));
   if(c.f.alcance==='uno'){
@@ -7570,6 +7621,7 @@ function generarPDF(c){
         tabla([{t:'Instructor',w:70},{t:'Usuario',w:30},{t:'Estado',w:52}], c.selIna.map(u=>[u.nombre,u.usuario,'Contraseña inicial sin cambiar'])); }
       else par('Todos los instructores del alcance ya ingresaron a la plataforma.');
     }
+  }
   }
   /* 2. Panorama */
   h2((++n)+'. Panorama general de los llamados de atención');
@@ -7590,10 +7642,15 @@ function generarPDF(c){
       I.fichas.map(o=>[o.ficha,faltaCorta(o.programa),String(o.total),String(o.enF),String(o.est['RETIRO VOLUNTARIO']||0),String(o.est['CANCELADO']||0),String(o.otros-0),String(o.con),{t:o.pdes+' %',b:o.pdes>=15,c:o.pdes>=15?ROJO:TX}]));
   }
   /* 3. Dimensión */
-  const dim = c.f.dim;
+  const dim = c.dim;
   h2((++n)+'. '+(dimTxt[dim]||dimTxt.ficha).replace(/\.$/,''));
   if(!c.docs.length) par('Sin información para analizar en el periodo.');
-  else if(dim==='aprendiz'){
+  else if(dim==='historial'){
+    const a0 = c.aprs[0];
+    par((a0?a0.nombre:'El aprendiz')+' registra '+plural(c.docs.length,'documento','documentos')+' en el periodo'+(a0?' (situación actual: '+a0.sit+')':'')+'. Se listan en orden cronológico.',{gap:1.5});
+    tabla([{t:'Fecha',w:20},{t:'Documento',w:40},{t:'Falta',w:68},{t:'Ficha',w:18},{t:'Instructor',w:36}],
+      c.docs.map(h=>[fmtF(h._d), h.tipo_documento==='plan'?'Plan de mejoramiento':('Llamado '+(h.tipo_llamado||'')+' · '+(h.numero_llamado||'')), h._falta, h._ficha, h.nombre_usuario||'']));
+  } else if(dim==='aprendiz'){
     par('Se registran documentos para '+c.aprs.length+' aprendices. Se listan primero los de mayor gravedad.',{gap:1.5});
     tabla([{t:'Aprendiz',w:52},{t:'Documento',w:28},{t:'Ficha',w:20},{t:'Docs',w:11},{t:'Falta principal',w:40},{t:'Situación',w:31}],
       c.aprs.slice(0,60).map(a=>[a.nombre,a.doc,a.ficha,String(a.n),faltaCorta(a.falta),{t:a.sit,b:a.prior,c:a.prior?ROJO:TX}]));
@@ -7616,7 +7673,8 @@ function generarPDF(c){
     tabla([{t:'Falta',w:88},{t:'Casos',w:14},{t:'%',w:12},{t:'Fichas',w:16},{t:'Instructores',w:22}],
       c.faltas.map(([k,v])=>{ const ds=c.docs.filter(h=>h._falta===k); return [faltaCorta(k),String(v),pct(v,c.docs.length)+'',String(new Set(ds.map(h=>h._ficha)).size),String(new Set(ds.map(h=>h.nombre_usuario)).size)]; }));
   } else {
-    c.fichas.slice(0,12).forEach(o => {
+    const maxF = c.enfoque==='programa' ? 40 : 12;
+    c.fichas.slice(0,maxF).forEach(o => {
       need(34); h3('Ficha '+o.ficha+(o.programa?' · '+faltaCorta(o.programa):''));
       par(parrafoFicha(o,c));
       const iv = c.inv && c.inv.porFicha[o.ficha];
@@ -7625,7 +7683,7 @@ function generarPDF(c){
       if(lista2.length) tabla([{t:'Aprendiz',w:52},{t:'Documento',w:28},{t:'Docs',w:11},{t:'Falta principal',w:55},{t:'Situación',w:34}],
         lista2.map(a=>[a.nombre,a.doc,String(a.n),faltaCorta(a.falta),{t:a.sit,b:a.prior,c:a.prior?ROJO:TX}]));
     });
-    if(c.fichas.length>12) par('Se detallan las 12 fichas con más documentos; el resto está en el anexo.',{color:GRIS});
+    if(c.fichas.length>maxF) par('Se detallan las '+maxF+' fichas con más documentos; el resto está en el anexo.',{color:GRIS});
   }
   /* 4. Prioritarios */
   h2((++n)+'. Aprendices que requieren atención prioritaria');
@@ -7663,51 +7721,67 @@ function generarPDF(c){
 function barraHTML(items, color){
   if(!items.length) return '<div style="color:#888;font-size:12px;">Sin datos en el periodo</div>';
   const max=Math.max(...items.map(i=>i[1]),1);
-  return items.map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;"><div style="width:42%;min-width:90px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(n)}">${esc(faltaCorta(n))}</div><div style="flex:1;background:#eef1f6;border-radius:4px;height:14px;"><div style="width:${Math.max(3,v*100/max)}%;height:14px;border-radius:4px;background:${color||'#1565c0'};"></div></div><b style="width:28px;text-align:right;color:#1a1a1a;">${v}</b></div>`).join('');
+  return items.map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;"><div style="width:42%;min-width:90px;color:#333;word-break:break-word;" title="${esc(n)}">${esc(faltaCorta(n))}</div><div style="flex:1;background:#eef1f6;border-radius:4px;height:14px;"><div style="width:${Math.max(3,v*100/max)}%;height:14px;border-radius:4px;background:${color||'#1565c0'};"></div></div><b style="width:28px;text-align:right;color:#1a1a1a;">${v}</b></div>`).join('');
 }
 function tileHTML(t,v,col){ return `<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:12px;"><div style="font-size:11px;color:#666;margin-bottom:3px;">${t}</div><div style="font-size:26px;font-weight:700;color:${col};">${v}</div></div>`; }
 function pintar(){
   const root=document.getElementById('estat-root'); if(!root) return;
   if(!E.listo){ root.innerHTML='<div style="padding:24px;text-align:center;color:#666;">Cargando datos…</div>'; return; }
   const f=E.f; if(!f.hasta) f.hasta=hoyISO();
-  const c=calc(f);
+  const c=calc(f); const dimA=c.dim; const OP=c.opt;
   const instOpts = c.todos.slice().sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')).map(u=>`<option value="${u.id}" ${String(f.uid)===String(u.id)?'selected':''}>${esc(u.nombre)}${u.estado==='inactivo'?' (sin ingreso)':''}</option>`).join('');
   const sel='width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;background:#fff;';
   const lab='font-size:11px;color:#555;display:block;margin-bottom:3px;';
   let dimItems=[], dimTit='';
-  if(f.dim==='ficha'){ dimTit='Documentos por ficha'; dimItems=c.fichas.slice(0,10).map(o=>['Ficha '+o.ficha,o.n]); }
-  else if(f.dim==='aprendiz'){ dimTit='Aprendices con más documentos'; dimItems=c.aprs.slice(0,10).map(a=>[a.nombre,a.n]); }
-  else if(f.dim==='instructor'){ dimTit='Documentos por instructor'; dimItems=c.instrConDocs.slice(0,10).map(o=>[o.u.nombre,o.n]); }
-  else if(f.dim==='tipo'){ dimTit='Documentos por tipo'; dimItems=[['Llamado disciplinario',c.nDisc],['Llamado académico',c.nAcad],['Plan de mejoramiento',c.nPl]]; }
-  else { dimTit='Faltas más frecuentes'; dimItems=c.faltas.slice(0,10); }
+  if(dimA==='ficha'){ dimTit='Documentos por ficha'; dimItems=c.fichas.slice(0,10).map(o=>['Ficha '+o.ficha,o.n]); }
+  else if(dimA==='aprendiz'){ dimTit='Aprendices con más documentos'; dimItems=c.aprs.slice(0,10).map(a=>[a.nombre,a.n]); }
+  else if(dimA==='instructor'){ dimTit='Documentos por instructor'; dimItems=c.instrConDocs.slice(0,10).map(o=>[o.u.nombre,o.n]); }
+  else if(dimA==='tipo'){ dimTit='Documentos por tipo'; dimItems=[['Llamado disciplinario',c.nDisc],['Llamado académico',c.nAcad],['Plan de mejoramiento',c.nPl]]; }
+  else { dimTit=dimA==='historial'?'Faltas del aprendiz':'Faltas más frecuentes'; dimItems=c.faltas.slice(0,10); }
   const sinPDF = f.alcance==='uno' && !f.uid;
   const resumenTxt = (c.docs.length===0
-    ? 'Todavía no se han generado llamados de atención ni planes de mejoramiento.'
-    : 'Se han generado '+c.nLl+' llamado(s) de atención y '+c.nPl+' plan(es) de mejoramiento.')
-    + (c.nIna>0 ? ' Faltan '+c.nIna+' instructor(es) por ingresar a la plataforma.' : ' Todos los instructores registrados ya ingresaron.');
+    ? 'Todavía no se han generado llamados de atención ni planes de mejoramiento'+(c.filtroContenido?' con los filtros elegidos.':'.')
+    : 'Con lo que tienes seleccionado hay '+c.nLl+' llamado(s) de atención y '+c.nPl+' plan(es) de mejoramiento.')
+    + (!c.filtroContenido ? (c.nIna>0 ? ' Faltan '+c.nIna+' instructor(es) por ingresar a la plataforma.' : ' Todos los instructores registrados ya ingresaron.') : '');
+  const optH = (arr, sel, todo) => '<option value="">'+todo+'</option>'+arr.map(x=>{ const v=Array.isArray(x)?x[0]:x, t=Array.isArray(x)?x[1]:x; return '<option value="'+esc(v)+'" '+(sel===v?'selected':'')+'>'+esc(t)+'</option>'; }).join('');
+  const sel0='width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;background:#fff;';
+  const lab0='font-size:11px;color:#555;display:block;margin-bottom:3px;';
   root.innerHTML = `
   <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;">
     <div style="font-size:13px;font-weight:700;margin-bottom:6px;">Situación actual de la plataforma</div>
     <div style="font-size:13px;color:#333;line-height:1.5;margin-bottom:12px;">${resumenTxt}</div>
-    <button onclick="estatPDF()" ${sinPDF?'disabled':''} style="width:100%;padding:13px;background:#1565c0;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;${sinPDF?'opacity:.5;':''}">Generar reporte (PDF)</button>
-    ${sinPDF?'<div style="font-size:11px;color:#c62828;margin-top:6px;text-align:center;">Elige un instructor para generar su reporte.</div>':'<div style="font-size:11px;color:#777;margin-top:6px;text-align:center;">El reporte se genera aunque todavía no haya llamados ni planes.</div>'}
+    <button onclick="estatPDF()" ${sinPDF?'disabled':''} style="width:100%;padding:13px;background:#1565c0;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;line-height:1.35;${sinPDF?'opacity:.5;':''}">Generar reporte<div style="font-size:12px;font-weight:500;opacity:.92;margin-top:3px;">${esc(c.etiqueta)}</div></button>
+    ${sinPDF?'<div style="font-size:11px;color:#c62828;margin-top:6px;text-align:center;">Elige un instructor para generar su reporte.</div>':'<div style="font-size:11px;color:#777;margin-top:6px;text-align:center;">El reporte se arma con los filtros de abajo y se genera aunque todavía no haya llamados ni planes.</div>'}
+    <div id="estat-aviso" style="font-size:12px;color:#c62828;margin-top:6px;text-align:center;"></div>
   </div>
   <div style="background:#e3f2fd;border-radius:10px;padding:10px 14px;font-size:12px;color:#0d47a1;margin-bottom:12px;">Las estadísticas cuentan solo desde el <b>28/10/2026</b>. Lo anterior era etapa de desarrollo y no se incluye.</div>
-  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
-    <div><label style="${lab}">Alcance</label><select style="${sel}" onchange="estatSet('alcance',this.value)">
-      <option value="todos" ${f.alcance==='todos'?'selected':''}>Todos los instructores</option>
-      <option value="activos" ${f.alcance==='activos'?'selected':''}>Solo activos</option>
-      <option value="inactivos" ${f.alcance==='inactivos'?'selected':''}>Solo sin ingreso</option>
-      <option value="uno" ${f.alcance==='uno'?'selected':''}>Un instructor</option></select></div>
-    ${f.alcance==='uno'?`<div><label style="${lab}">Instructor</label><select style="${sel}" onchange="estatSet('uid',this.value)"><option value="">Selecciona…</option>${instOpts}</select></div>`:''}
-    <div><label style="${lab}">Analizar por</label><select style="${sel}" onchange="estatSet('dim',this.value)">
-      <option value="ficha" ${f.dim==='ficha'?'selected':''}>Ficha</option>
-      <option value="aprendiz" ${f.dim==='aprendiz'?'selected':''}>Aprendiz</option>
-      <option value="instructor" ${f.dim==='instructor'?'selected':''}>Instructor</option>
-      <option value="tipo" ${f.dim==='tipo'?'selected':''}>Tipo de llamado</option>
-      <option value="falta" ${f.dim==='falta'?'selected':''}>Tipo de falta</option></select></div>
-    <div><label style="${lab}">Desde</label><input type="date" min="${CORTE_DIA}" value="${f.desde}" style="${sel}" onchange="estatSet('desde',this.value)"></div>
-    <div><label style="${lab}">Hasta</label><input type="date" min="${CORTE_DIA}" value="${f.hasta}" style="${sel}" onchange="estatSet('hasta',this.value)"></div>
+  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><div style="font-size:13px;font-weight:700;">Filtros del reporte</div><button onclick="estatLimpiar()" style="background:none;border:none;color:#1565c0;font-size:12px;font-weight:600;cursor:pointer;">Quitar filtros</button></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;">
+      <div><label style="${lab0}">Periodo</label><select style="${sel0}" onchange="estatSet('periodo',this.value)">
+        <option value="todo" ${f.periodo==='todo'?'selected':''}>Todo desde el 28/10/2026</option>
+        <option value="trimestre" ${f.periodo==='trimestre'?'selected':''}>Últimos 3 meses (trimestre)</option>
+        <option value="mes" ${f.periodo==='mes'?'selected':''}>Este mes</option>
+        <option value="custom" ${f.periodo==='custom'?'selected':''}>Fechas personalizadas</option></select></div>
+      ${f.periodo==='custom'?`<div><label style="${lab0}">Desde</label><input type="date" min="${CORTE_DIA}" value="${f.desde}" style="${sel0}" onchange="estatSet('desde',this.value)"></div><div><label style="${lab0}">Hasta</label><input type="date" min="${CORTE_DIA}" value="${f.hasta}" style="${sel0}" onchange="estatSet('hasta',this.value)"></div>`:''}
+      <div><label style="${lab0}">Programa de formación</label><select style="${sel0}" onchange="estatSet('programa',this.value)">${optH(OP.progs,f.programa,'Todos los programas')}</select></div>
+      <div><label style="${lab0}">Ficha</label><select style="${sel0}" onchange="estatSet('ficha',this.value)">${optH(OP.fichas,f.ficha,'Todas las fichas')}</select></div>
+      <div><label style="${lab0}">Instructores</label><select style="${sel0}" onchange="estatSet('alcance',this.value)">
+        <option value="todos" ${f.alcance==='todos'?'selected':''}>Todos los instructores</option>
+        <option value="activos" ${f.alcance==='activos'?'selected':''}>Solo activos</option>
+        <option value="inactivos" ${f.alcance==='inactivos'?'selected':''}>Solo sin ingreso</option>
+        <option value="uno" ${f.alcance==='uno'?'selected':''}>Un instructor</option></select></div>
+      ${f.alcance==='uno'?`<div><label style="${lab0}">Instructor</label><select style="${sel0}" onchange="estatSet('uid',this.value)"><option value="">Selecciona…</option>${instOpts}</select></div>`:''}
+      <div><label style="${lab0}">Aprendiz</label><select style="${sel0}" onchange="estatSet('aprendiz',this.value)">${optH(OP.aprs,f.aprendiz,'Todos los aprendices')}</select></div>
+      <div><label style="${lab0}">Falta</label><select style="${sel0}" onchange="estatSet('falta',this.value)">${optH(OP.faltas,f.falta,'Todas las faltas')}</select></div>
+      <div><label style="${lab0}">Gráfico principal</label><select style="${sel0}" onchange="estatSet('dim',this.value)">
+        <option value="auto" ${f.dim==='auto'?'selected':''}>Automático</option>
+        <option value="ficha" ${f.dim==='ficha'?'selected':''}>Por ficha</option>
+        <option value="aprendiz" ${f.dim==='aprendiz'?'selected':''}>Por aprendiz</option>
+        <option value="instructor" ${f.dim==='instructor'?'selected':''}>Por instructor</option>
+        <option value="tipo" ${f.dim==='tipo'?'selected':''}>Por tipo de llamado</option>
+        <option value="falta" ${f.dim==='falta'?'selected':''}>Por tipo de falta</option></select></div>
+    </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px;">
     ${tileHTML('Instructores registrados',c.todos.length,'#1565c0')}
@@ -7731,13 +7805,36 @@ window.estatIniciar = async function(){
   pintar();
 };
 window.estatSet = function(k,v){
+  const f=E.f;
+  if(k==='periodo'){
+    f.periodo=v; const h=new Date(), hoy=hoyISO();
+    if(v==='todo'){ f.desde=CORTE_DIA; f.hasta=hoy; }
+    else if(v==='trimestre'){ const d=new Date(); d.setMonth(d.getMonth()-3); const s0=isoDe(d); f.desde = s0<CORTE_DIA?CORTE_DIA:s0; f.hasta=hoy; }
+    else if(v==='mes'){ const s0=h.getFullYear()+'-'+pad(h.getMonth()+1)+'-01'; f.desde = s0<CORTE_DIA?CORTE_DIA:s0; f.hasta=hoy; }
+    pintar(); return;
+  }
   if((k==='desde'||k==='hasta') && v && v<CORTE_DIA) v=CORTE_DIA;
-  E.f[k]=v; pintar();
+  if(k==='desde'||k==='hasta') f.periodo='custom';
+  f[k]=v;
+  if(k==='programa'){ f.ficha=''; f.aprendiz=''; f.falta=''; }
+  if(k==='ficha'){ f.aprendiz=''; f.falta=''; }
+  if(k==='aprendiz'){ f.falta=''; }
+  pintar();
+};
+window.estatLimpiar = function(){
+  Object.assign(E.f, {alcance:'todos', uid:'', dim:'auto', periodo:'todo', programa:'', ficha:'', aprendiz:'', falta:'', desde:CORTE_DIA, hasta:hoyISO()});
+  pintar();
 };
 window.estatPDF = function(){
   try{
-    const c=calc(E.f); const d=generarPDF(c);
-    d.save('Reporte_estadistico_'+E.f.alcance+'_'+hoyISO().replace(/-/g,'')+'.pdf');
+    const c=calc(E.f);
+    const av=document.getElementById('estat-aviso');
+    if(c.filtroContenido && !c.docs.length){ if(av) av.textContent='No hay llamados ni planes con esos filtros. Cambia los filtros e inténtalo de nuevo.'; return; }
+    if(av) av.textContent='';
+    const d=generarPDF(c);
+    const slug = t => norm(t).replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,40);
+    const parte = c.filtrosVal.length ? '_'+slug(c.filtrosVal[0]) : '';
+    d.save('Reporte_'+c.enfoque+parte+'_'+hoyISO().replace(/-/g,'')+'.pdf');
   }catch(e){ console.error(e); alert('No se pudo generar el PDF: '+e.message); }
 };
 window.__EST = {E, calc, generarPDF, conclusiones, compromisos};
