@@ -7282,6 +7282,7 @@ function faltaLabel(k){
   try{ if(typeof FALTAS_ACAD!=='undefined' && FALTAS_ACAD[k]) return FALTAS_ACAD[k].label; }catch(e){}
   return String(k);
 }
+function instTxt(a){ const e = Object.entries(a.inst||{}).sort((x,y)=>y[1]-x[1]||x[0].localeCompare(y[0],'es')); if(!e.length) return '—'; return e.length===1 ? e[0][0] : e.map(([n,v])=>n+' ('+v+')').join('\n'); }
 function faltaCorta(t){ return String(t); } // nombres completos: ya no se recortan
 
 async function pedirTodo(ruta){
@@ -7399,7 +7400,8 @@ function calc(f){
   const pa = {};
   docs.forEach(h => {
     const k = (h.documento_aprendiz||'')+'|'+norm(h.nombre_aprendiz);
-    const o = pa[k] = pa[k] || {nombre:h.nombre_aprendiz||'(sin nombre)', doc:h.documento_aprendiz||'', ficha:h._ficha, n:0, ll:0, pl:0, seg:0, faltas:{}};
+    const o = pa[k] = pa[k] || {nombre:h.nombre_aprendiz||'(sin nombre)', doc:h.documento_aprendiz||'', ficha:h._ficha, n:0, ll:0, pl:0, seg:0, faltas:{}, inst:{}};
+    const ni = h.nombre_usuario||'(sin instructor)'; o.inst[ni] = (o.inst[ni]||0)+1;
     o.n++; if(esPlan(h)) o.pl++; else { o.ll++; if(h.numero_llamado==='segundo') o.seg++; }
     o.faltas[h._falta]=(o.faltas[h._falta]||0)+1;
     if(pf[h._ficha]) pf[h._ficha].apr[k]=o;
@@ -7652,8 +7654,8 @@ function generarPDF(c){
       c.docs.map(h=>[fmtF(h._d), h.tipo_documento==='plan'?'Plan de mejoramiento':('Llamado '+(h.tipo_llamado||'')+' · '+(h.numero_llamado||'')), h._falta, h._ficha, h.nombre_usuario||'']));
   } else if(dim==='aprendiz'){
     par('Se registran documentos para '+c.aprs.length+' aprendices. Se listan primero los de mayor gravedad.',{gap:1.5});
-    tabla([{t:'Aprendiz',w:52},{t:'Documento',w:28},{t:'Ficha',w:20},{t:'Docs',w:11},{t:'Falta principal',w:40},{t:'Situación',w:31}],
-      c.aprs.slice(0,60).map(a=>[a.nombre,a.doc,a.ficha,String(a.n),faltaCorta(a.falta),{t:a.sit,b:a.prior,c:a.prior?ROJO:TX}]));
+    tabla([{t:'Aprendiz',w:36},{t:'Documento',w:22},{t:'Ficha',w:17},{t:'Docs',w:12},{t:'Falta principal',w:34},{t:'Instructor que lo generó',w:36},{t:'Situación',w:25}],
+      c.aprs.slice(0,60).map(a=>[a.nombre,a.doc,a.ficha,String(a.n),faltaCorta(a.falta),instTxt(a),{t:a.sit,b:a.prior,c:a.prior?ROJO:TX}]));
     if(c.aprs.length>60) par('Se muestran los 60 primeros; el listado completo está en el anexo.',{color:GRIS});
   } else if(dim==='instructor'){
     par('Participación de cada instructor en los documentos del periodo.',{gap:1.5});
@@ -7680,8 +7682,8 @@ function generarPDF(c){
       const iv = c.inv && c.inv.porFicha[o.ficha];
       if(iv) par('De los '+iv.enF+' aprendices en formación de la ficha, '+o.aprs.length+' ('+pct(o.aprs.length,iv.enF)+' %) tienen llamados o planes.'+(iv.des?' Registra '+plural(iv.des,'caso','casos')+' de deserción.':''));
       const lista2 = o.aprs.filter(a=>a.n>=1).slice(0,8);
-      if(lista2.length) tabla([{t:'Aprendiz',w:52},{t:'Documento',w:28},{t:'Docs',w:11},{t:'Falta principal',w:55},{t:'Situación',w:34}],
-        lista2.map(a=>[a.nombre,a.doc,String(a.n),faltaCorta(a.falta),{t:a.sit,b:a.prior,c:a.prior?ROJO:TX}]));
+      if(lista2.length) tabla([{t:'Aprendiz',w:40},{t:'Documento',w:22},{t:'Docs',w:12},{t:'Falta principal',w:42},{t:'Instructor que lo generó',w:38},{t:'Situación',w:28}],
+        lista2.map(a=>[a.nombre,a.doc,String(a.n),faltaCorta(a.falta),instTxt(a),{t:a.sit,b:a.prior,c:a.prior?ROJO:TX}]));
     });
     if(c.fichas.length>maxF) par('Se detallan las '+maxF+' fichas con más documentos; el resto está en el anexo.',{color:GRIS});
   }
@@ -7690,8 +7692,8 @@ function generarPDF(c){
   if(!c.prior.length) par('En el periodo no se identifican aprendices con dos o más documentos, segundo llamado o plan de mejoramiento.');
   else {
     par('Se identifican '+plural(c.prior.length,'aprendiz','aprendices')+' con dos o más documentos, segundo llamado o plan de mejoramiento. Un nuevo incumplimiento podría llevar a agotar las medidas formativas según el Reglamento del Aprendiz.',{gap:1.5});
-    tabla([{t:'Aprendiz',w:52},{t:'Documento',w:28},{t:'Ficha',w:20},{t:'Docs',w:11},{t:'Falta principal',w:40},{t:'Situación',w:31}],
-      c.prior.slice(0,40).map(a=>[a.nombre,a.doc,a.ficha,String(a.n),faltaCorta(a.falta),{t:a.sit,b:true,c:ROJO}]));
+    tabla([{t:'Aprendiz',w:36},{t:'Documento',w:22},{t:'Ficha',w:17},{t:'Docs',w:12},{t:'Falta principal',w:34},{t:'Instructor que lo generó',w:36},{t:'Situación',w:25}],
+      c.prior.slice(0,40).map(a=>[a.nombre,a.doc,a.ficha,String(a.n),faltaCorta(a.falta),instTxt(a),{t:a.sit,b:true,c:ROJO}]));
   }
   /* 5. Repetidas */
   if(c.repetidas.length){
