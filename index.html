@@ -1310,25 +1310,6 @@ window.addEventListener('load', ()=>{
  <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">Esta información se incluirá en el documento para orientar el acompañamiento al aprendiz.</p>
  <div class="grid2">
 
- <!-- Estilo de aprendizaje -->
- <div class="field full">
- <label>Estilo de aprendizaje predominante</label>
- <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;">
- <label style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:0.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;transition:all 0.15s;" id="lbl-estilo-divergente">
- <input type="radio" name="p-estilo" value="Divergente (Siente y observa)" onchange="marcarEstilo('divergente')"> <span><strong>Divergente</strong><br><span style="font-size:11px;color:var(--muted)">Siente y observa</span></span>
- </label>
- <label style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:0.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;transition:all 0.15s;" id="lbl-estilo-asimilador">
- <input type="radio" name="p-estilo" value="Asimilador (Piensa y reflexiona)" onchange="marcarEstilo('asimilador')"> <span><strong>Asimilador</strong><br><span style="font-size:11px;color:var(--muted)">Piensa y reflexiona</span></span>
- </label>
- <label style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:0.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;transition:all 0.15s;" id="lbl-estilo-convergente">
- <input type="radio" name="p-estilo" value="Convergente (Piensa y hace)" onchange="marcarEstilo('convergente')"> <span><strong>Convergente</strong><br><span style="font-size:11px;color:var(--muted)">Piensa y hace</span></span>
- </label>
- <label style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:0.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;transition:all 0.15s;" id="lbl-estilo-acomodador">
- <input type="radio" name="p-estilo" value="Acomodador o Adaptador (Siente y hace)" onchange="marcarEstilo('acomodador')"> <span><strong>Acomodador o Adaptador</strong><br><span style="font-size:11px;color:var(--muted)">Siente y hace</span></span>
- </label>
- </div>
- </div>
-
  <!-- Técnicas didácticas (las describe el instructor o el equipo ejecutor) -->
  <div class="field full" style="margin-top:8px;">
  <label>¿Quién aplicará las técnicas didácticas?</label>
@@ -1340,7 +1321,7 @@ window.addEventListener('load', ()=>{
  <div class="field full">
  <label>Técnicas didácticas que se aplicarán</label>
  <textarea id="p-tecnicas" rows="3" placeholder="Describe las técnicas didácticas. Ej: estudios de caso, ejercicios prácticos y resolución de problemas propios del programa de formación"></textarea>
- <div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4;">Al elegir el estilo de aprendizaje se escribe una sugerencia. Puedes cambiarla o escribir las técnicas que vas a aplicar. En el documento aparece después de "aplicará técnicas didácticas como:".</div>
+ <div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4;">Escribe las técnicas didácticas que se van a aplicar. En el documento aparece después de "aplicará técnicas didácticas como:".</div>
  </div>
 
  <!-- Condición de aprendizaje -->
@@ -4249,35 +4230,13 @@ function toggleOtraCondicion(val){
  if(campo) campo.style.display = val==='Otra' ? 'block' : 'none';
 }
 
-const TECNICAS_SUGERIDAS = {
- divergente: 'lluvia de ideas, análisis de situaciones desde distintos puntos de vista, trabajo colaborativo y observación de casos reales propios del programa de formación, además de estrategias de acompañamiento acordes con este perfil.',
- asimilador: 'lecturas guiadas, mapas conceptuales, análisis de modelos e informes técnicos propios del programa de formación, además de estrategias de acompañamiento acordes con este perfil.',
- convergente: 'estudios de caso, ejercicios prácticos y resolución de problemas propios del programa de formación, además de estrategias de acompañamiento acordes con este perfil.',
- acomodador: 'prácticas en taller, proyectos aplicados, simulaciones y aprendizaje basado en la experiencia propios del programa de formación, además de estrategias de acompañamiento acordes con este perfil.'
-};
-function sugerirTecnicas(id){
- const t = document.getElementById('p-tecnicas');
- if(!t) return;
- const actual = t.value.trim();
- // Solo se reemplaza si está vacío o si todavía tiene una sugerencia automática (no lo que escribió el instructor)
- if(!actual || Object.values(TECNICAS_SUGERIDAS).includes(actual)) t.value = TECNICAS_SUGERIDAS[id] || '';
-}
 function actualizarReportaPlan(){
  const eq = document.getElementById('p-reporta').value === 'equipo';
  document.getElementById('p-campo-instructor').style.display = eq ? 'none' : '';
  if(!eq) fijarInstructorPerfil('p-instructor');
  const ap = document.getElementById('p-aplica'); if(ap) ap.value = eq ? 'el equipo ejecutor' : 'el instructor';
 }
-function marcarEstilo(id){
- sugerirTecnicas(id);
- ['divergente','asimilador','convergente','acomodador'].forEach(e=>{
- const lbl = document.getElementById('lbl-estilo-'+e);
- if(lbl) lbl.style.borderColor = e===id ? '#15851E' : 'var(--border)';
- if(lbl) lbl.style.background = e===id ? '#EAF3DE' : '';
- });
-}
 
-function getEstilo(){ return document.querySelector('input[name="p-estilo"]:checked')?.value||''; }
 function getCondicionTipo(){
  const t = document.getElementById('p-condicion-tipo');
  if(!t||!t.value) return '';
@@ -4335,12 +4294,7 @@ function pValidate(n){
  if(!el||!el.value.trim()){alert('Por favor completa: '+label);el&&el.focus();return false;}
  }
  if(n===2){
- // El segundo párrafo del plan siempre parte del estilo de aprendizaje y de las técnicas didácticas
- if(!getEstilo()){
-  alert('Selecciona el estilo de aprendizaje del aprendiz. Con él se redacta el párrafo de las técnicas didácticas del plan.');
-  const r = document.querySelector('input[name="p-estilo"]'); if(r) r.closest('label')?.scrollIntoView({behavior:'smooth', block:'center'});
-  return false;
- }
+ // El segundo párrafo del plan parte de las técnicas didácticas
  const t = document.getElementById('p-tecnicas');
  if(t && !t.value.trim()){ alert('Describe las técnicas didácticas que se aplicarán.'); t.focus(); return false; }
  }
@@ -4497,7 +4451,6 @@ function buildPlanResumen(){
  const ft=pv('p-fecha-fin'), fft=ft?(()=>{const[yy,mm,dd]=ft.split('-');const ms=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];return parseInt(dd)+' de '+ms[parseInt(mm)-1]+' de '+yy;})():'';
  const compSel = competencias.filter(c=>c.sel).length;
  const tieneCondResumen = document.getElementById('p-condicion-si')?.checked;
- const estiloResumen = getEstilo();
  const condResumen = getCondicionTipo();
  document.getElementById('p-resumen').innerHTML=`
  <div class="preview-row"><span>Aprendiz:</span><span>${pv('p-nombre')}</span></div>
@@ -4508,7 +4461,6 @@ function buildPlanResumen(){
  <div class="preview-row"><span>Fecha:</span><span>Barranquilla, ${ff}</span></div>
  <div class="preview-row"><span>Fecha inicio:</span><span>${ffi}</span></div>
  <div class="preview-row"><span>Fecha fin:</span><span>${fft}</span></div>
- <div class="preview-row"><span>Estilo de aprendizaje:</span><span>${estiloResumen||'No especificado'}</span></div>
  <div class="preview-row"><span>Condición de aprendizaje:</span><span>${tieneCondResumen&&condResumen?condResumen:'No aplica'}</span></div>
  <div class="preview-row"><span>Competencias seleccionadas:</span><span>${compSel} de ${competencias.length}</span></div>
  <div class="preview-row"><span>Actividades:</span><span>${actividades.length} actividad(es)</span></div>
@@ -4726,32 +4678,11 @@ function generarPlanPDF(){
  const txtLegal1 = 'El presente Plan de Mejoramiento se formula con fundamento en el Artículo 46, Tipos de medidas formativas, del Acuerdo 009 de 2024, por el cual se adopta el Reglamento del Aprendiz SENA. Según esta norma, el plan de mejoramiento es una medida formativa de carácter académico cuya finalidad es garantizar el logro de los resultados de aprendizaje que no han sido alcanzados. Procede una vez se han agotado los dos (2) llamados de atención académicos realizados previamente al aprendiz. En atención a ello, este plan tiene como objetivo establecer un conjunto de actividades, con sus respectivas evidencias y criterios de evaluación, que le permitan alcanzar los resultados de aprendizaje pendientes.';
  const parrafos = [txtLegal1];
 
- // Estilo de aprendizaje y técnicas didácticas (variables: estilo, qué significa, quién aplica y técnicas escritas por el instructor)
+ // Técnicas didácticas (quién aplica y técnicas escritas por el instructor)
  const quienAplica = pv('p-aplica') || 'el equipo ejecutor';
  let tecnicas = (document.getElementById('p-tecnicas')?.value || '').replace(/\s+/g,' ').trim();
  if(tecnicas && !/[.!?]$/.test(tecnicas)) tecnicas += '.';
- const estiloVal = getEstilo();
- if(estiloVal){
-   const ESTILOS = {
-     'Divergente (Siente y observa)': {
-       significa: 'aprende mejor cuando puede observar situaciones desde diferentes perspectivas, recopilar información y usar la imaginación para resolver problemas',
-       actividades: 'lluvia de ideas, análisis de situaciones desde distintos puntos de vista, trabajo colaborativo y observación de casos reales' },
-     'Asimilador (Piensa y reflexiona)': {
-       significa: 'aprende mejor cuando puede procesar teorías, modelos abstractos y explicaciones lógicas bien estructuradas',
-       actividades: 'lecturas guiadas, mapas conceptuales, análisis de modelos e informes técnicos' },
-     'Convergente (Piensa y hace)': {
-       significa: 'aprende mejor cuando puede aplicar teorías y conceptos abstractos a la solución práctica de problemas concretos',
-       actividades: 'estudios de caso, ejercicios prácticos y resolución de problemas' },
-     'Acomodador o Adaptador (Siente y hace)': {
-       significa: 'aprende mejor haciendo, a partir de experiencias directas y adaptándose con flexibilidad a situaciones cambiantes',
-       actividades: 'prácticas en taller, proyectos aplicados, simulaciones y aprendizaje basado en la experiencia' }
-   };
-   const e = ESTILOS[estiloVal];
-   if(e){
-     const idEst = estiloVal.split(' ')[0].toLowerCase();
-     parrafos.push('Para el diseño de dichas actividades se tiene en cuenta su estilo de aprendizaje predominantemente ' + estiloVal.toLowerCase() + '. Esto significa que ' + e.significa + '. Por esta razón, ' + quienAplica + ' aplicará técnicas didácticas como: ' + (tecnicas || TECNICAS_SUGERIDAS[idEst] || ''));
-   }
- } else if(tecnicas){
+ if(tecnicas){
    parrafos.push('Para el diseño de dichas actividades, ' + quienAplica + ' aplicará técnicas didácticas como: ' + tecnicas);
  }
 
